@@ -1462,3 +1462,19 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* Admin */
+.admin-gate { margin-bottom: 20px; max-width: 560px; }
+.gate-desc { font-size: 0.85rem; color: var(--text-muted); margin: 6px 0 14px; }
+.gate-row { display: flex; gap: 10px; margin-bottom: 10px; }
+.gate-row input { flex: 1; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border-light); font-size: 0.9rem; outline: none; }
+.gate-row input:focus { border-color: var(--blue-600); }
+.admin-toolbar { margin-bottom: 14px; }
+.cloud-card { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border-subtle); }
+.cloud-card h4 { margin-bottom: 10px; color: var(--blue-950); }
+.cloud-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; font-size: 0.82rem; }
+.cloud-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--bg-body); padding: 8px 10px; border-radius: 8px; }
+
+.rule-meta-line { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.7rem; color: rgba(219,234,254,0.45); user-select: none; }
+.meta-glyph { opacity: 0.35; cursor: default; padding: 2px; transition: opacity 0.2s; }
+.meta-glyph:hover { opacity: 0.65; }

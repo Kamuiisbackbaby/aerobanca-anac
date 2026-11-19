@@ -497,6 +497,16 @@ const INITIAL_QUESTIONS = [
   }
 ];
 
+// Escapa texto antes de inserir em innerHTML (evita XSS)
+function esc(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // ============================================================================
 // ESTADO DA APLICAÇÃO
 // ============================================================================
@@ -535,6 +545,30 @@ function loadQuestionsFromStorage() {
     localStorage.setItem('aerobanca_questions_v1', JSON.stringify(questionsDB));
   }
   updateTotalQuestionsKPI();
+
+  // Se a URL da API do Railway estiver configurada em admin.js, sincroniza as questões da nuvem
+  if (window.AdminApi && AdminApi.enabled() && AdminApi.url) {
+    fetch(`${AdminApi.url}/questoes`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((cloudQuestions) => {
+        if (Array.isArray(cloudQuestions) && cloudQuestions.length > 0) {
+          // Mescla gabarito local conhecido ou mantém questões vindas da nuvem
+          const localMap = new Map(INITIAL_QUESTIONS.map((q) => [q.id, q]));
+          questionsDB = cloudQuestions.map((cq) => {
+            const loc = localMap.get(cq.id);
+            return {
+              ...cq,
+              correct: cq.correct !== undefined ? cq.correct : loc ? loc.correct : 0,
+              explanation: cq.explanation || (loc ? loc.explanation : 'Questão cadastrada no banco Railway.')
+            };
+          });
+          updateTotalQuestionsKPI();
+          renderSubjectsDashboard();
+          renderQuestionBank();
+        }
+      })
+      .catch(() => {});
+  }
 }
 
 function updateTotalQuestionsKPI() {
@@ -573,6 +607,23 @@ function setupNavigation() {
     evaluateDiagnosticExam(false);
     document.getElementById('dashboardDiagnosticReport').scrollIntoView({ behavior: 'smooth' });
   });
+
+  // Gatilho discreto no cadeado do rodapé (exige 3 cliques rápidos em menos de 1.2s)
+  const glyph = document.getElementById('sys RevNode');
+  if (glyph) {
+    let taps = 0;
+    let tapTimer = null;
+    glyph.addEventListener('click', () => {
+      taps++;
+      clearTimeout(tapTimer);
+      tapTimer = setTimeout(() => { taps = 0; }, 1200);
+      if (taps >= 3) {
+        taps = 0;
+        switchView('database');
+        document.getElementById('sidebar').classList.remove('open');
+      }
+    });
+  }
 }
 
 function switchView(viewName) {
@@ -599,8 +650,8 @@ function switchView(viewName) {
       'Treine questões comentadas de Meteorologia, Navegação, Regulamentos, Motores e Teoria de Voo'
     ],
     database: [
-      'Cadastro de Questões & Banco de Dados Gratuito',
-      'Adicione questões ao banco e veja a modelagem SQL gratuita recomendada para produção'
+      'Painel do Administrador',
+      'Área restrita para cadastrar e gerenciar questões no banco PostgreSQL'
     ]
   };
 
@@ -737,7 +788,7 @@ function renderExamQuestion() {
       return `
         <button class="option-btn ${isSelected ? 'selected' : ''}" onclick="selectExamOption(${idx})">
           <span class="option-letter">${letters[idx]}</span>
-          <span>${optText}</span>
+          <span>${esc(optText)}</span>
         </button>
       `;
     })
@@ -1047,24 +1098,24 @@ function renderQuestionBank() {
       (q) => `
       <article class="bank-q-card" id="bank-card-${q.id}">
         <div class="question-header-meta">
-          <span class="q-id-tag">${q.id}</span>
-          <span class="q-topic-tag">${q.subject} • ${q.topic}</span>
-          <span class="q-difficulty">${q.difficulty}</span>
+          <span class="q-id-tag">${esc(q.id)}</span>
+          <span class="q-topic-tag">${esc(q.subject)} • ${esc(q.topic)}</span>
+          <span class="q-difficulty">${esc(q.difficulty)}</span>
         </div>
-        <p class="question-stem" style="font-size:1rem; margin-bottom:12px;">${q.stem}</p>
+        <p class="question-stem" style="font-size:1rem; margin-bottom:12px;">${esc(q.stem)}</p>
         <div class="bank-options-grid">
           ${q.options
             .map(
               (opt, idx) => `
             <button class="bank-opt" onclick="checkBankAnswer('${q.id}', ${idx}, ${q.correct}, this)">
-              <strong>${letters[idx]})</strong> ${opt}
+              <strong>${letters[idx]})</strong> ${esc(opt)}
             </button>
           `
             )
             .join('')}
         </div>
         <div class="bank-explanation hidden" id="exp-${q.id}">
-          <strong>Gabarito Comentado (${letters[q.correct]}):</strong> ${q.explanation}
+          <strong>Gabarito Comentado (${letters[q.correct]}):</strong> ${esc(q.explanation)}
         </div>
       </article>
     `
@@ -1130,6 +1181,24 @@ function setupFormAndDatabaseActions() {
       explanation
     };
 
+    // Com a API configurada, salva na nuvem (exige login de admin)
+    if (window.AdminApi && AdminApi.enabled()) {
+      const feedbackEl = document.getElementById('formFeedback');
+      AdminApi.criar({ ...newQuestion, id: undefined })
+        .then((r) => {
+          form.reset();
+          feedbackEl.textContent = `✓ Questão ${r.id} salva na nuvem!`;
+          feedbackEl.classList.remove('hidden');
+          if (window.refreshAdminList) window.refreshAdminList();
+        })
+        .catch((err) => {
+          feedbackEl.textContent = `✗ ${err.message}`;
+          feedbackEl.classList.remove('hidden');
+        })
+        .finally(() => setTimeout(() => feedbackEl.classList.add('hidden'), 5000));
+      return;
+    }
+
     questionsDB.unshift(newQuestion);
     localStorage.setItem('aerobanca_questions_v1', JSON.stringify(questionsDB));
 
@@ -1155,12 +1224,14 @@ function setupFormAndDatabaseActions() {
     a.remove();
   });
 
-  // Copiar SQL Schema
-  document.getElementById('copySqlBtn').addEventListener('click', () => {
-    const sqlText = document.getElementById('sqlSchemaCode').innerText;
-    navigator.clipboard.writeText(sqlText);
-    const btn = document.getElementById('copySqlBtn');
-    btn.textContent = 'SQL Copiado!';
-    setTimeout(() => (btn.textContent = 'Copiar SQL'), 2000);
-  });
+  // Copiar SQL Schema (se existir na página)
+  const copySqlBtn = document.getElementById('copySqlBtn');
+  if (copySqlBtn) {
+    copySqlBtn.addEventListener('click', () => {
+      const sqlText = document.getElementById('sqlSchemaCode').innerText;
+      navigator.clipboard.writeText(sqlText);
+      copySqlBtn.textContent = 'SQL Copiado!';
+      setTimeout(() => (copySqlBtn.textContent = 'Copiar SQL'), 2000);
+    });
+  }
 }
