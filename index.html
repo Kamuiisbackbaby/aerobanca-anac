@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AeroBanca ANAC — Plataforma de Estudos & Simulados de Aviação</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Sidebar / Top Navigation -->
+  <div class="app-layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">AeroBanca</span>
+          <span class="brand-subtitle">Banca ANAC • PP / PC / CMS</span>
+        </div>
+        <button class="mobile-close-btn" id="closeSidebarBtn" aria-label="Fechar menu">✕</button>
+      </div>
+
+      <div class="license-selector">
+        <label for="licenseSelect">Foco da Licença</label>
+        <select id="licenseSelect">
+          <option value="PP">Piloto Privado (PP-A / PP-H)</option>
+          <option value="PC">Piloto Comercial (PC / IFR)</option>
+          <option value="CMS">Comissário de Voo (CMS)</option>
+        </select>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-view="dashboard">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+          <span>Painel & Matérias</span>
+        </button>
+        <button class="nav-item" data-view="diagnostic">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+          <span>Simulado de Nivelamento (30q)</span>
+          <span class="nav-badge">Diagnóstico</span>
+        </button>
+        <button class="nav-item" data-view="questions">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+          <span>Banco de Questões</span>
+        </button>
+        <button class="nav-item" data-view="database">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+          <span>Cadastro & Banco Gratuito</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="anac-rule-card">
+          <div class="rule-header">
+            <span class="status-dot"></span>
+            <strong>Padrão Banca ANAC</strong>
+          </div>
+          <p>Aprovação requer mínimo de <strong>70% de acerto</strong> (14/20 questões) em cada matéria.</p>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <div class="main-wrapper">
+      <!-- Topbar -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="menu-toggle" id="openSidebarBtn" aria-label="Abrir menu">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          </button>
+          <div>
+            <h1 class="page-title" id="pageTitle">Painel de Comando & Matérias</h1>
+            <p class="page-subtitle" id="pageSubtitle">Monitore seu desempenho por área da ANAC e identifique seus pontos cegos</p>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div class="db-pill" title="Pronto para integração com Supabase PostgreSQL">
+            <span class="db-dot"></span>
+            <span>DB: Supabase Ready (Local Sync)</span>
+          </div>
+          <button class="btn btn-primary" id="quickStartDiagnosticBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Iniciar Nivelamento (30q)</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- VIEW 1: DASHBOARD & SUBJECTS -->
+      <main class="view-section active" id="view-dashboard">
+        <!-- Hero Banner for Diagnostic Exam -->
+        <section class="hero-card">
+          <div class="hero-content">
+            <div class="hero-badge">RECOMENDADO PARA INICIAR</div>
+            <h2>Simulado de Nivelamento Inicial — 30 Questões</h2>
+            <p>Avaliação diagnóstica balanceada com <strong>6 questões de cada uma das 5 matérias oficiais da ANAC</strong> (MET, NAV, RPA, CT e TSV). Ao concluir, o sistema gera seu mapa de calor e aponta exatamente onde falta atenção e onde você deve focar.</p>
+            <div class="hero-actions">
+              <button class="btn btn-light" onclick="switchView('diagnostic')">
+                Fazer Simulado de Nivelamento Agora
+              </button>
+              <button class="btn btn-outline-light" id="loadSampleResultBtn">
+                Ver Exemplo de Diagnóstico Pronto
+              </button>
+            </div>
+          </div>
+          <div class="hero-visual">
+            <div class="radar-preview">
+              <div class="radar-circle c1"></div>
+              <div class="radar-circle c2"></div>
+              <div class="radar-sweep"></div>
+              <div class="radar-stat">
+                <span class="radar-number">30</span>
+                <span class="radar-label">Questões Oficiais</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- KPI Summary Row -->
+        <section class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">Aproveitamento Geral</span>
+            <div class="stat-value-row">
+              <strong class="stat-value" id="kpiOverallPct">--%</strong>
+              <span class="stat-tag" id="kpiOverallTag">Sem diagnóstico</span>
+            </div>
+            <p class="stat-helper">Meta mínima ANAC: 70% por matéria</p>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Matérias Aprovadas (≥70%)</span>
+            <div class="stat-value-row">
+              <strong class="stat-value" id="kpiPassedSubjects">0 / 5</strong>
+              <span class="stat-tag tag-blue">Bloco ANAC</span>
+            </div>
+            <p class="stat-helper">Todas as 5 áreas precisam atingir 70%</p>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Prioridade Máxima de Foco</span>
+            <div class="stat-value-row">
+              <strong class="stat-value stat-focus" id="kpiCriticalSubject">Faça o teste</strong>
+            </div>
+            <p class="stat-helper" id="kpiCriticalHelper">Descubra sua matéria mais vulnerável</p>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">Questões no Banco</span>
+            <div class="stat-value-row">
+              <strong class="stat-value" id="kpiTotalQuestions">30</strong>
+              <span class="stat-tag tag-cyan">5 Matérias</span>
+            </div>
+            <p class="stat-helper">Cadastradas e separadas por área</p>
+          </div>
+        </section>
+
+        <!-- Diagnostic Breakdown Panel (Appears when diagnostic is completed or demo loaded) -->
+        <section class="diagnostic-report-card hidden" id="dashboardDiagnosticReport">
+          <div class="section-header">
+            <div>
+              <span class="eyebrow">RELATÓRIO DE INTELIGÊNCIA DE ESTUDO</span>
+              <h3>Mapa de Atenção & Plano de Foco ANAC</h3>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="switchView('diagnostic')">Refazer Nivelamento</button>
+          </div>
+          <div class="report-columns">
+            <div class="subject-bars-container" id="dashboardSubjectBars">
+              <!-- Populated by JS -->
+            </div>
+            <div class="focus-recommendations" id="dashboardFocusRecommendations">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </section>
+
+        <!-- 5 ANAC Subjects Section -->
+        <section class="subjects-section">
+          <div class="section-header">
+            <div>
+              <span class="eyebrow">ÁREAS DO CONHECIMENTO ANAC</span>
+              <h3>Matérias Oficiais Separadas por Bloco</h3>
+            </div>
+            <p class="section-desc">Clique em qualquer matéria para treinar somente questões daquela área específica.</p>
+          </div>
+
+          <div class="subjects-grid" id="subjectsGrid">
+            <!-- Populated by JS -->
+          </div>
+        </section>
+      </main>
+
+      <!-- VIEW 2: DIAGNOSTIC SIMULADO (30 QUESTIONS) -->
+      <main class="view-section" id="view-diagnostic">
+        <div class="exam-top-bar">
+          <div class="exam-meta">
+            <span class="badge-subject" id="examCurrentSubjectBadge">MET • Meteorologia</span>
+            <span class="exam-counter" id="examQuestionCounter">Questão 1 de 30</span>
+          </div>
+          <div class="exam-timer-box">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="examTimer">45:00</span>
+          </div>
+          <div class="exam-actions-top">
+            <button class="btn btn-secondary btn-sm" id="fillDemoDiagnosticBtn" title="Preencher automaticamente para testar o relatório de foco">
+              Simular Respostas Rápidas
+            </button>
+            <button class="btn btn-primary btn-sm" id="finishDiagnosticBtn">
+              Finalizar e Ver Diagnóstico
+            </button>
+          </div>
+        </div>
+
+        <div class="exam-progress-track">
+          <div class="exam-progress-fill" id="examProgressBar" style="width: 3.33%"></div>
+        </div>
+
+        <div class="exam-layout" id="examActiveContainer">
+          <!-- Question Area -->
+          <div class="question-card">
+            <div class="question-header-meta">
+              <span class="q-id-tag" id="examQCode">#MET-01</span>
+              <span class="q-topic-tag" id="examQTopic">METAR / TAF e Nuvens</span>
+              <span class="q-difficulty" id="examQDifficulty">Nível: Banca ANAC</span>
+            </div>
+
+            <p class="question-stem" id="examQuestionStem">
+              Carregando questão...
+            </p>
+
+            <div class="options-list" id="examOptionsList">
+              <!-- Populated by JS -->
+            </div>
+
+            <div class="question-nav-footer">
+              <button class="btn btn-secondary" id="prevQuestionBtn">← Anterior</button>
+              <button class="btn btn-outline-blue" id="flagQuestionBtn">
+                ⚑ Marcar Dúvida
+              </button>
+              <button class="btn btn-primary" id="nextQuestionBtn">Próxima →</button>
+            </div>
+          </div>
+
+          <!-- Question Map Navigator (30 questions grouped by subject) -->
+          <aside class="question-map-card">
+            <h4>Mapa da Prova (30 Questões)</h4>
+            <p class="map-subtitle">6 questões por matéria oficial ANAC</p>
+            <div class="map-legend">
+              <span><i class="dot dot-current"></i> Atual</span>
+              <span><i class="dot dot-answered"></i> Respondida</span>
+              <span><i class="dot dot-flagged"></i> Dúvida</span>
+            </div>
+            <div id="examMapGroups" class="map-groups">
+              <!-- Populated by JS -->
+            </div>
+          </aside>
+        </div>
+
+        <!-- Diagnostic Result Modal/Screen inside Diagnostic View -->
+        <div class="diagnostic-result-screen hidden" id="examResultScreen">
+          <!-- Populated dynamically when exam finishes -->
+        </div>
+      </main>
+
+      <!-- VIEW 3: QUESTION BANK BY SUBJECT -->
+      <main class="view-section" id="view-questions">
+        <div class="filter-bar">
+          <div class="filter-pills" id="bankSubjectPills">
+            <button class="pill active" data-subject="ALL">Todas (30)</button>
+            <button class="pill" data-subject="MET">Meteorologia (MET)</button>
+            <button class="pill" data-subject="NAV">Navegação (NAV)</button>
+            <button class="pill" data-subject="RPA">Regulamentos (RPA)</button>
+            <button class="pill" data-subject="CT">Conhecimentos Técnicos (CT)</button>
+            <button class="pill" data-subject="TSV">Teoria de Voo (TSV)</button>
+          </div>
+          <div class="search-box">
+            <input type="text" id="bankSearchInput" placeholder="Buscar por código (ex: METAR, QNH, RBAC, Vor, Estol)...">
+          </div>
+        </div>
+
+        <div class="bank-questions-list" id="bankQuestionsList">
+          <!-- Populated by JS -->
+        </div>
+      </main>
+
+      <!-- VIEW 4: FREE DATABASE ARCHITECTURE & QUESTION REGISTRATION -->
+      <main class="view-section" id="view-database">
+        <div class="db-grid-layout">
+          <!-- Left: Question Registration Form (Interface) -->
+          <div class="card-panel">
+            <div class="panel-header">
+              <span class="eyebrow">CADASTRO NO BANCO</span>
+              <h3>Cadastrar Nova Questão ANAC</h3>
+              <p>Adicione questões separadas por matéria e subtópico para alimentar o simulado de nivelamento.</p>
+            </div>
+
+            <form id="addQuestionForm" class="form-stack">
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label for="newQSubject">Matéria Oficial ANAC</label>
+                  <select id="newQSubject" required>
+                    <option value="MET">MET — Meteorologia Aeronáutica</option>
+                    <option value="NAV">NAV — Navegação Aérea</option>
+                    <option value="RPA">RPA — Regulamentos de Tráfego Aéreo</option>
+                    <option value="CT">CT — Conhecimentos Técnicos e Motores</option>
+                    <option value="TSV">TSV — Teoria de Voo</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="newQTopic">Subtópico (Foco de Atenção)</label>
+                  <input type="text" id="newQTopic" placeholder="Ex: Altimetria QNH/QNE, METAR, Estol..." required>
+                </div>
+              </div>
+
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label for="newQLicense">Licença Alvo</label>
+                  <select id="newQLicense">
+                    <option value="PP">Piloto Privado (PP)</option>
+                    <option value="PC">Piloto Comercial (PC/IFR)</option>
+                    <option value="CMS">Comissário (CMS)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="newQDifficulty">Nível de Dificuldade</label>
+                  <select id="newQDifficulty">
+                    <option value="Essencial">Essencial (Base)</option>
+                    <option value="Banca ANAC" selected>Padrão Banca ANAC</option>
+                    <option value="Avançado">Avançado / Pegadinha</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label for="newQStem">Enunciado da Questão</label>
+                <textarea id="newQStem" rows="3" placeholder="Digite o enunciado completo no padrão de múltipla escolha da ANAC..." required></textarea>
+              </div>
+
+              <div class="options-inputs">
+                <div class="form-group">
+                  <label>Alternativa A</label>
+                  <input type="text" id="newQOptA" placeholder="Texto da alternativa A" required>
+                </div>
+                <div class="form-group">
+                  <label>Alternativa B</label>
+                  <input type="text" id="newQOptB" placeholder="Texto da alternativa B" required>
+                </div>
+                <div class="form-group">
+                  <label>Alternativa C</label>
+                  <input type="text" id="newQOptC" placeholder="Texto da alternativa C" required>
+                </div>
+                <div class="form-group">
+                  <label>Alternativa D</label>
+                  <input type="text" id="newQOptD" placeholder="Texto da alternativa D" required>
+                </div>
+              </div>
+
+              <div class="form-row-2">
+                <div class="form-group">
+                  <label for="newQCorrect">Gabarito Oficial</label>
+                  <select id="newQCorrect" required>
+                    <option value="0">Alternativa A</option>
+                    <option value="1">Alternativa B</option>
+                    <option value="2">Alternativa C</option>
+                    <option value="3">Alternativa D</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="newQExplanation">Comentário / Explicação Técnica</label>
+                  <input type="text" id="newQExplanation" placeholder="Resumo do motivo técnico do gabarito..." required>
+                </div>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Salvar Questão no Banco</button>
+                <button type="button" class="btn btn-secondary" id="exportJsonBtn">Exportar JSON para Supabase</button>
+              </div>
+              <div id="formFeedback" class="form-feedback hidden"></div>
+            </form>
+          </div>
+
+          <!-- Right: Database Recommendation & SQL Schema -->
+          <div class="card-panel db-architecture-panel">
+            <div class="panel-header">
+              <span class="eyebrow">ARQUITETURA RECOMENDADA (100% GRATUITA)</span>
+              <h3>Melhor Banco de Dados Gratuito para Questões da ANAC</h3>
+              <p>Comparativo técnico para armazenar milhares de questões, gerar simulados randômicos de 30 questões e gravar o histórico de nivelamento.</p>
+            </div>
+
+            <div class="db-comparison-cards">
+              <div class="db-choice-card recommended">
+                <div class="db-choice-top">
+                  <div>
+                    <span class="winner-badge">★ MELHOR ESCOLHA</span>
+                    <h4>1. Supabase (PostgreSQL no Plano Free)</h4>
+                  </div>
+                  <span class="db-cost">R$ 0 / mês</span>
+                </div>
+                <p>Banco relacional PostgreSQL completo com API REST instantânea para o front-end (sem precisar criar servidor Node/バックエンド separado).</p>
+                <ul class="db-pros">
+                  <li><strong>500 MB de banco SQL</strong>: suporta mais de <strong>150.000 questões</strong> comentadas da ANAC gratuitamente.</li>
+                  <li><strong>Sorteio nativo no banco (`ORDER BY RANDOM()`)</strong>: cria o simulado de nivelamento pegando exatamente 6 questões aleatórias de cada matéria (`MET`, `NAV`, `RPA`, `CT`, `TSV`).</li>
+                  <li><strong>Painel Table Editor igual Excel</strong>: você pode cadastrar ou importar planilhas CSV de questões direto pelo painel visual do Supabase.</li>
+                </ul>
+              </div>
+
+              <div class="db-choice-card">
+                <div class="db-choice-top">
+                  <h4>2. Firebase Firestore (Google Spark Plan)</h4>
+                  <span class="db-cost">Gratuito (NoSQL)</span>
+                </div>
+                <p>Excelente para tempo real (50.000 leituras/dia grátis), porém bancos NoSQL não possuem `ORDER BY RANDOM()` nativo para sortear questões equilibradas por matéria sem custo extra de leituras.</p>
+              </div>
+
+              <div class="db-choice-card">
+                <div class="db-choice-top">
+                  <h4>3. Turso (SQLite Edge) / Neon Serverless</h4>
+                  <span class="db-cost">Gratuito (5 GB)</span>
+                </div>
+                <p>Ótima segunda opção SQL gratuita com até 5 GB de armazenamento, ideal caso queira escalar para imagens de cartas aeronáuticas e diagramas de motores.</p>
+              </div>
+            </div>
+
+            <div class="sql-schema-box">
+              <div class="sql-header">
+                <span>Modelagem SQL Pronta (Copiar e Colar no Supabase SQL Editor)</span>
+                <button class="btn-copy" id="copySqlBtn">Copiar SQL</button>
+              </div>
+              <pre id="sqlSchemaCode"><code>-- 1. Tabela de Matérias Oficiais da ANAC
+CREATE TABLE materias_anac (
+  sigla VARCHAR(5) PRIMARY KEY, -- 'MET', 'NAV', 'RPA', 'CT', 'TSV'
+  nome VARCHAR(100) NOT NULL,
+  nota_minima_aprovacao INT DEFAULT 70
+);
+
+-- 2. Tabela de Questões
+CREATE TABLE questoes_anac (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  materia_sigla VARCHAR(5) REFERENCES materias_anac(sigla),
+  licenca VARCHAR(10) DEFAULT 'PP', -- 'PP', 'PC', 'CMS', 'PLA'
+  subtopico VARCHAR(120) NOT NULL,  -- Ex: 'Altimetria QNH/QNE', 'METAR'
+  dificuldade VARCHAR(30) DEFAULT 'Banca ANAC',
+  enunciado TEXT NOT NULL,
+  alternativas JSONB NOT NULL,      -- ["Texto A", "Texto B", "Texto C", "Texto D"]
+  indice_correta SMALLINT NOT NULL, -- 0, 1, 2 ou 3
+  comentario_gabarito TEXT,
+  criado_em TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 3. View para sortear Simulado de Nivelamento (6 questões de cada uma das 5 áreas = 30 questões)
+CREATE VIEW v_simulado_nivelamento_30q AS
+SELECT * FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY materia_sigla ORDER BY RANDOM()) as rn
+  FROM questoes_anac
+) sorteio
+WHERE rn <= 6;</code></pre>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
