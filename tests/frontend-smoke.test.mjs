@@ -87,6 +87,13 @@ function createMockElement(tag = 'div', id = '', classes = [], attrs = {}) {
       el.children.push(child);
       return child;
     },
+    insertBefore: (newNode, refNode) => {
+      newNode.parentElement = el;
+      const idx = refNode ? el.children.indexOf(refNode) : -1;
+      if (idx === -1) el.children.push(newNode);
+      else el.children.splice(idx, 0, newNode);
+      return newNode;
+    },
     append: (...nodes) => {
       nodes.forEach((n) => {
         if (typeof n === 'object' && n) el.appendChild(n);
@@ -215,6 +222,9 @@ function buildDomHarness({ initialToken = '', innerWidth = 1280, fetchHandler } 
   reg('button', 'startLevelingBtn');
 
   const examActiveContainer = reg('section', 'examActiveContainer', ['exam-active-container', 'hidden']);
+  const examLayout = createMockElement('div', '', ['exam-layout']);
+  examActiveContainer.appendChild(examLayout);
+  examActiveContainer.querySelector = (sel) => (sel === '.exam-layout' ? examLayout : null);
   reg('span', 'examCurrentSubjectBadge');
   reg('span', 'examQuestionCounter');
   reg('div', 'examTimerBox');
@@ -498,6 +508,8 @@ test('app.js implements required API endpoints, state keys, XSS escaping, and re
   for (const dead of deadReferences) {
     assert.equal(appJs.includes(dead), false, `app.js must NOT contain dead reference "${dead}"`);
   }
+
+  assert.equal(/\bonclick\s*=/i.test(appJs), false, 'app.js must NOT use inline onclick= handlers');
 });
 
 test('runtime: bootstrap without token shows authScreen and blocks submit without career selection', async () => {
@@ -620,9 +632,20 @@ test('runtime: login with nivelamento_concluido=false enforces mandatory levelin
   assert.equal(env.byId.get('view-simulado').classList.contains('active'), true);
   assert.equal(env.byId.get('view-dashboard').classList.contains('active'), false);
 
-  // Submitting before answering all 30 must be blocked
+  // Attempting startCustomSimulado while leveling locked must NOT call /simulado/personalizado
+  const callsBeforeCustom = env.fetchCalls.length;
+  await env.context.startCustomSimulado();
+  assert.equal(env.fetchCalls.length, callsBeforeCustom, 'startCustomSimulado must be blocked while leveling-locked');
+
+  // Submitting before answering all 30 must be blocked and #examFeedback placed BEFORE .exam-layout
   await env.byId.get('finishExamBtn').click();
   assert.equal(corrigirCalled, 0);
+  const activeChildren = env.examActiveContainer.children;
+  const feedbackIdx = activeChildren.findIndex((c) => c.id === 'examFeedback');
+  const layoutIdx = activeChildren.findIndex((c) => c.classList.contains('exam-layout'));
+  assert.equal(feedbackIdx >= 0, true, '#examFeedback must be mounted inside #examActiveContainer');
+  assert.equal(layoutIdx >= 0, true, '.exam-layout must exist inside #examActiveContainer');
+  assert.equal(feedbackIdx < layoutIdx, true, '#examFeedback must appear BEFORE .exam-layout');
 
   // Answer all 30 questions and submit
   for (let i = 0; i < 30; i++) {
@@ -896,9 +919,152 @@ test('runtime: register mode, token bootstrap, career switch, Module 1 practice,
   assert.equal(env.authScreen.classList.contains('hidden'), false);
   assert.equal(env.appShell.classList.contains('hidden'), true);
 
-  // Logout button also clears token and returns to authScreen
-  regEnv.byId.get('logoutBtn').click();
+  // Logout button also clears token, state, and user DOM containers (shared-device safety)
+  regEnv.context.openSubjectPractice('MET');
+  await regEnv.context.loadAndRenderMetrics(true);
+  regEnv.byId.get('examResultScreen').innerHTML = '<div>User A Result</div>';
+  regEnv.byId.get('examResultScreen').classList.remove('hidden');
+  regEnv.byId.get('examOptionsList').innerHTML = '<button>Opt</button>';
+  regEnv.byId.get('examMapGroups').innerHTML = '<button>1</button>';
+  await regEnv.byId.get('logoutBtn').click();
   assert.equal(regEnv.sessionStorage.getItem('aerobanca_user_token'), null);
   assert.equal(regEnv.authScreen.classList.contains('hidden'), false);
   assert.equal(regEnv.appShell.classList.contains('hidden'), true);
+  assert.equal(regEnv.byId.get('examResultScreen').innerHTML, '');
+  assert.equal(regEnv.byId.get('examResultScreen').classList.contains('hidden'), true);
+  assert.equal(regEnv.byId.get('examOptionsList').innerHTML, '');
+  assert.equal(regEnv.byId.get('examMapGroups').innerHTML, '');
+  assert.equal(regEnv.byId.get('practiceQuestionsList').innerHTML, '');
+  assert.equal(regEnv.byId.get('metricsContent').innerHTML, '');
+  assert.equal(regEnv.byId.get('subjectsGrid').innerHTML, '');
+  assert.equal(regEnv.byId.get('kpiOverallPct').textContent, '--%');
+  assert.equal(regEnv.byId.get('careerQuickSelect').value, 'PP');
+  assert.equal(regEnv.byId.get('topbarCareerBadge').textContent, 'PP');
+});
+
+test('runtime: offline/null-response practice fallback, <30 leveling merge, and in-flight submit button disabling', async () => {
+  // 1) Offline mode (AdminApi.url = '') falls back cleanly in answerPracticeQuestion without throwing
+  const offlineEnv = buildDomHarness();
+  offlineEnv.window.AdminApi = { url: '', enabled: () => false, isLoggedIn: () => false };
+  await offlineEnv.boot();
+  offlineEnv.context.openSubjectPractice('MET');
+  await offlineEnv.context.answerPracticeQuestion('MET-01', 1);
+  const offlineHtml = offlineEnv.byId.get('practiceQuestionsList').innerHTML;
+  assert.equal(offlineHtml.includes('correct-reveal'), true);
+  assert.equal(offlineHtml.includes('Gabarito Comentado (B)'), true);
+
+  // 2) Null fetch response in apiFetch does not crash with Cannot read properties of null ('json')
+  const nullRespEnv = buildDomHarness({
+    initialToken: 'tok.123',
+    fetchHandler: async (url) => {
+      if (url.endsWith('/auth/me')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user: { id: 4, nome: 'Piloto', email: 'p@anac.br', carreira: 'PP', nivelamento_concluido: true },
+          }),
+        };
+      }
+      if (url.endsWith('/questoes/MET-01/responder')) return null;
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+  await nullRespEnv.boot();
+  nullRespEnv.context.openSubjectPractice('MET');
+  await nullRespEnv.context.answerPracticeQuestion('MET-01', 0);
+  const fallbackHtml = nullRespEnv.byId.get('practiceQuestionsList').innerHTML;
+  assert.equal(fallbackHtml.includes('wrong-reveal'), true);
+  assert.equal(fallbackHtml.includes('correct-reveal'), true);
+
+  // 3) startLevelingExam pads gracefully to 30 questions when API returns < 30,
+  //    #simuladoConfigCard hides immediately during async boot, and buttons disable in-flight
+  let resolveLogin;
+  let resolveQuestoes;
+  let resolveCorrigir;
+  const flightEnv = buildDomHarness({
+    fetchHandler: (url) => {
+      if (url.endsWith('/auth/login')) {
+        return new Promise((resolve) => {
+          resolveLogin = () =>
+            resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                token: 'tok.flight',
+                user: { id: 5, nome: 'Voo', email: 'v@anac.br', carreira: 'PP', nivelamento_concluido: false },
+              }),
+            });
+        });
+      }
+      if (url.endsWith('/questoes')) {
+        return new Promise((resolve) => {
+          resolveQuestoes = () => resolve({ ok: true, status: 200, json: async () => [] });
+        });
+      }
+      if (url.endsWith('/simulado')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => [
+            { id: 'MET-01', subject: 'MET', topic: 'T1', difficulty: 'Banca ANAC', stem: 'Q1', options: ['A', 'B', 'C', 'D'] },
+            { id: 'NAV-01', subject: 'NAV', topic: 'T2', difficulty: 'Banca ANAC', stem: 'Q2', options: ['A', 'B', 'C', 'D'] },
+          ],
+        });
+      }
+      if (url.endsWith('/simulado/corrigir')) {
+        return new Promise((resolve) => {
+          resolveCorrigir = () =>
+            resolve({
+              ok: true,
+              status: 200,
+              json: async () => ({
+                tentativaId: 1,
+                tipo: 'nivelamento',
+                carreira: 'PP',
+                total_questoes: 30,
+                total_acertos: 30,
+                percentual: 100,
+                nivelamento_concluido: true,
+                porMateria: {},
+              }),
+            });
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    },
+  });
+
+  await flightEnv.boot();
+  await flightEnv.careerBtns[0].click();
+  flightEnv.byId.get('authEmailInput').value = 'v@anac.br';
+  flightEnv.byId.get('authPasswordInput').value = 'Senha123';
+
+  const loginPromise = flightEnv.byId.get('authForm').dispatchEvent({ type: 'submit' });
+  await Promise.resolve();
+  assert.equal(flightEnv.byId.get('authSubmitBtn').disabled, true, '#authSubmitBtn must be disabled while login is in flight');
+  resolveLogin();
+  // Let enterAuthenticatedApp run until it awaits /questoes
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(
+    flightEnv.simConfigCard.classList.contains('hidden'),
+    true,
+    '#simuladoConfigCard must be hidden immediately while leveling-locked boot awaits APIs'
+  );
+  resolveQuestoes();
+  await loginPromise;
+  assert.equal(flightEnv.byId.get('authSubmitBtn').disabled, false, '#authSubmitBtn must re-enable after login resolves');
+
+  assert.equal(flightEnv.byId.get('examQuestionCounter').textContent, '1 / 30', 'startLevelingExam must pad <30 DB questions to 30');
+
+  for (let i = 0; i < 30; i++) {
+    flightEnv.context.jumpToExamQuestion(i);
+    flightEnv.context.selectExamOption(0);
+  }
+  const finishPromise = flightEnv.byId.get('finishExamBtn').click();
+  await Promise.resolve();
+  assert.equal(flightEnv.byId.get('finishExamBtn').disabled, true, '#finishExamBtn must be disabled while corrigir is in flight');
+  resolveCorrigir();
+  await finishPromise;
+  assert.equal(flightEnv.byId.get('finishExamBtn').disabled, false, '#finishExamBtn must re-enable after corrigir resolves');
 });

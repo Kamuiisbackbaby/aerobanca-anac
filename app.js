@@ -636,6 +636,35 @@ function resetSessionState() {
   examResultVisible = false;
   stopExamTimer();
   resetAuthCareerSelection();
+  closeSubjectPractice();
+  resetSimuladoToConfig();
+
+  const clearIds = [
+    'examResultScreen',
+    'examOptionsList',
+    'examMapGroups',
+    'practiceQuestionsList',
+    'metricsContent',
+    'subjectsGrid'
+  ];
+  clearIds.forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+
+  const practiceSearch = document.getElementById('practiceSearchInput');
+  if (practiceSearch) practiceSearch.value = '';
+
+  const nameEl = document.getElementById('sidebarUserName');
+  const emailEl = document.getElementById('sidebarUserEmail');
+  const careerSelect = document.getElementById('careerQuickSelect');
+  const badgeEl = document.getElementById('topbarCareerBadge');
+  if (nameEl) nameEl.textContent = 'Aluno';
+  if (emailEl) emailEl.textContent = '—';
+  if (careerSelect) careerSelect.value = 'PP';
+  if (badgeEl) badgeEl.textContent = 'PP';
+
+  renderDashboardKPIs();
 }
 
 function handleSessionExpired(message = 'Sua sessão expirou. Entre novamente.') {
@@ -674,6 +703,10 @@ async function apiFetch(path, options = {}) {
     ...fetchOpts,
     headers
   });
+
+  if (!response) {
+    throw new Error('Resposta indisponível do servidor.');
+  }
 
   const data = await response.json().catch(() => null);
 
@@ -898,6 +931,9 @@ async function enterAuthenticatedApp(user) {
 
   if (isLevelingLocked()) {
     document.body.classList.add('leveling-locked');
+    document.getElementById('simuladoConfigCard')?.classList.add('hidden');
+    document.getElementById('examActiveContainer')?.classList.add('hidden');
+    document.getElementById('examResultScreen')?.classList.add('hidden');
     switchView('simulado');
     await Promise.allSettled([loadQuestionsFromApi(), loadMetricsFromApi()]);
     if (currentUser && isLevelingLocked()) {
@@ -1739,7 +1775,12 @@ function getExamFeedbackEl() {
   el.className = 'form-feedback hidden';
   el.setAttribute('role', 'status');
   el.style.marginBottom = '14px';
-  container.appendChild(el);
+  const layout = typeof container.querySelector === 'function' ? container.querySelector('.exam-layout') : null;
+  if (layout && typeof container.insertBefore === 'function') {
+    container.insertBefore(el, layout);
+  } else {
+    container.appendChild(el);
+  }
   examFeedbackEl = el;
   return el;
 }
@@ -1885,6 +1926,7 @@ function pickLocalQuestions(subjects, limit) {
 }
 
 async function startCustomSimulado() {
+  if (isLevelingLocked()) return;
   setSimuladoConfigFeedback('');
 
   const checked = Array.from(document.querySelectorAll('input[name="simSubject"]:checked'))
@@ -1947,7 +1989,7 @@ async function startLevelingExam({ isMandatory = false } = {}) {
   try {
     if (isApiEnabled()) {
       const fetched = await apiFetch('/simulado', { auth: false, handleUnauthorized: false });
-      if (Array.isArray(fetched) && fetched.length >= 30) {
+      if (Array.isArray(fetched) && fetched.length > 0) {
         questions = fetched.slice(0, 30);
       }
     }
@@ -1956,7 +1998,8 @@ async function startLevelingExam({ isMandatory = false } = {}) {
   }
 
   if (questions.length < 30) {
-    questions = INITIAL_QUESTIONS.slice(0, 30);
+    const seen = new Set(questions.map((q) => q.id));
+    questions = [...questions, ...INITIAL_QUESTIONS.filter((q) => !seen.has(q.id))].slice(0, 30);
   }
 
   beginExam({
@@ -2172,6 +2215,7 @@ async function submitActiveExam() {
   });
 
   const finishBtn = document.getElementById('finishExamBtn');
+  const examTipo = activeExam.tipo;
   activeExam.submitting = true;
   setExamFeedback('');
   if (finishBtn) {
@@ -2185,12 +2229,12 @@ async function submitActiveExam() {
       body: JSON.stringify({
         respostas,
         questoes,
-        tipo: activeExam.tipo
+        tipo: examTipo
       })
     });
 
     stopExamTimer();
-    const wasLeveling = activeExam.tipo === 'nivelamento';
+    const wasLeveling = examTipo === 'nivelamento';
     if (wasLeveling || (result && result.nivelamento_concluido)) {
       if (currentUser) currentUser.nivelamento_concluido = true;
       document.body.classList.remove('leveling-locked');
@@ -2212,11 +2256,12 @@ async function submitActiveExam() {
   } catch (err) {
     if (err && err.status === 401) return;
     if (activeExam) activeExam.submitting = false;
+    setExamFeedback((err && err.message) || 'Não foi possível corrigir o simulado. Tente novamente.', 'error');
+  } finally {
     if (finishBtn) {
       finishBtn.disabled = false;
-      finishBtn.textContent = activeExam && activeExam.tipo === 'nivelamento' ? 'Concluir Nivelamento' : 'Finalizar';
+      finishBtn.textContent = examTipo === 'nivelamento' ? 'Concluir Nivelamento' : 'Finalizar';
     }
-    setExamFeedback((err && err.message) || 'Não foi possível corrigir o simulado. Tente novamente.', 'error');
   }
 }
 
