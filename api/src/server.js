@@ -728,7 +728,7 @@ if (require.main === module) {
         console.log("Banco PostgreSQL inicializado com sucesso");
       })
       .catch((e) => {
-        app.setDbStatus(`error: ${e.message}`);
+        app.setDbStatus("error");
         console.error("Aviso ao conectar no banco:", e.message);
       });
   });
