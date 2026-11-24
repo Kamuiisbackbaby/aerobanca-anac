@@ -86,6 +86,7 @@ document.addEventListener('DOMContentLoaded', () => {
           try {
             await AdminApi.remover(q.id);
             renderList();
+            if (window.refreshQuestionsFromApi) window.refreshQuestionsFromApi();
           } catch (e) {
             setStatus(e.message);
             refresh();
