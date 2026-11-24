@@ -595,6 +595,80 @@ let currentView = 'dashboard';
 let examFeedbackEl = null;
 let simuladoConfigFeedbackEl = null;
 
+let welcomeSplashTimer = null;
+let welcomeHideTimer = null;
+
+function getTimeBasedLoginGreeting(hour = new Date().getHours()) {
+  const h = Number.isFinite(hour) ? hour : new Date().getHours();
+  if (h >= 5 && h < 12) return 'Bom dia, seja bem vindo';
+  if (h >= 12 && h < 18) return 'Boa tarde, seja bem vindo';
+  return 'Boa noite, seja bem vindo';
+}
+
+function getWelcomeGreeting(mode, hour = new Date().getHours()) {
+  if (mode === 'register') {
+    return 'Parabéns, seja bem vindo à Aerobanca!';
+  }
+  return getTimeBasedLoginGreeting(hour);
+}
+
+window.getWelcomeGreeting = getWelcomeGreeting;
+
+function clearWelcomeTimers() {
+  if (welcomeSplashTimer) {
+    clearTimeout(welcomeSplashTimer);
+    welcomeSplashTimer = null;
+  }
+  if (welcomeHideTimer) {
+    clearTimeout(welcomeHideTimer);
+    welcomeHideTimer = null;
+  }
+}
+
+function hideWelcomeSplash(immediate = false) {
+  clearWelcomeTimers();
+  const splash = document.getElementById('welcomeSplash');
+  if (!splash) return;
+  if (immediate) {
+    splash.classList.add('hidden');
+    splash.classList.remove('is-leaving');
+    return;
+  }
+  splash.classList.add('is-leaving');
+  welcomeHideTimer = setTimeout(() => {
+    splash.classList.add('hidden');
+    splash.classList.remove('is-leaving');
+    welcomeHideTimer = null;
+  }, 260);
+}
+
+function showWelcomeSplash(mode) {
+  clearWelcomeTimers();
+  const splash = document.getElementById('welcomeSplash');
+  const titleEl = document.getElementById('welcomeSplashTitle');
+  const subEl = document.getElementById('welcomeSplashSub');
+  if (titleEl) titleEl.textContent = getWelcomeGreeting(mode);
+  if (subEl) {
+    subEl.textContent =
+      mode === 'register'
+        ? 'Configurando seu simulado de nivelamento...'
+        : 'Carregando seu painel e métricas...';
+  }
+  if (splash) {
+    splash.classList.remove('hidden', 'is-leaving');
+  }
+}
+
+function scheduleHideWelcomeSplash(delayMs = 1350) {
+  clearWelcomeTimers();
+  const splash = document.getElementById('welcomeSplash');
+  if (!splash || splash.classList.contains('hidden')) return;
+  welcomeSplashTimer = setTimeout(() => {
+    welcomeSplashTimer = null;
+    hideWelcomeSplash(false);
+  }, delayMs);
+}
+
 // ============================================================================
 // SESSÃO & CLIENTE HTTP (apiFetch)
 // ============================================================================
@@ -635,6 +709,7 @@ function resetSessionState() {
   activeExam = null;
   examResultVisible = false;
   stopExamTimer();
+  hideWelcomeSplash(true);
   resetAuthCareerSelection();
   closeSubjectPractice();
   resetSimuladoToConfig();
@@ -880,15 +955,16 @@ async function handleAuthSubmit(event) {
     return;
   }
 
-  const endpoint = authMode === 'register' ? '/auth/register' : '/auth/login';
+  const submittedMode = authMode;
+  const endpoint = submittedMode === 'register' ? '/auth/register' : '/auth/login';
   const payload =
-    authMode === 'register'
+    submittedMode === 'register'
       ? { nome, email, senha, carreira: selectedAuthCareer }
       : { email, senha, carreira: selectedAuthCareer };
 
   if (submitBtn) {
     submitBtn.disabled = true;
-    submitBtn.textContent = authMode === 'register' ? 'Criando conta...' : 'Entrando...';
+    submitBtn.textContent = submittedMode === 'register' ? 'Criando conta...' : 'Entrando...';
   }
   setAuthFeedback('');
 
@@ -906,8 +982,14 @@ async function handleAuthSubmit(event) {
 
     setUserToken(data.token);
     if (passInput) passInput.value = '';
-    await enterAuthenticatedApp(data.user);
+    showWelcomeSplash(submittedMode);
+    try {
+      await enterAuthenticatedApp(data.user);
+    } finally {
+      scheduleHideWelcomeSplash(1100);
+    }
   } catch (err) {
+    hideWelcomeSplash(true);
     setAuthFeedback((err && err.message) || 'Erro ao autenticar.', 'error');
   } finally {
     if (submitBtn) {

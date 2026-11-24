@@ -166,6 +166,10 @@ function buildDomHarness({ initialToken = '', innerWidth = 1280, fetchHandler } 
   reg('button', 'authSubmitBtn', ['btn', 'btn-primary']);
   reg('span', 'authAdminTrigger', ['meta-glyph']);
 
+  reg('div', 'welcomeSplash', ['welcome-splash', 'hidden']);
+  reg('h2', 'welcomeSplashTitle', ['welcome-splash-title']);
+  reg('p', 'welcomeSplashSub', ['welcome-splash-sub']);
+
   const appShell = reg('div', 'appShell', ['app-layout', 'hidden']);
   reg('div', 'sidebarBackdrop', ['sidebar-backdrop']);
   const sidebar = reg('aside', 'sidebar', ['sidebar']);
@@ -403,6 +407,8 @@ test('index.html loads favicon.svg, auth screen, collapsible sidebar, mobile bot
     'authSubmitBtn',
     'authFeedback',
     'authAdminTrigger',
+    'welcomeSplash',
+    'welcomeSplashTitle',
     'appShell',
     'sidebar',
     'sidebarBackdrop',
@@ -764,6 +770,10 @@ test('runtime: register mode, token bootstrap, career switch, Module 1 practice,
   await regEnv.byId.get('authForm').dispatchEvent({ type: 'submit' });
   assert.equal(regEnv.sessionStorage.getItem('aerobanca_user_token'), 'reg.token.123');
   assert.equal(regEnv.byId.get('view-dashboard').classList.contains('active'), true);
+  assert.equal(regEnv.byId.get('welcomeSplash').classList.contains('hidden'), false);
+  assert.equal(regEnv.byId.get('welcomeSplashTitle').textContent, 'Parabéns, seja bem vindo à Aerobanca!');
+  await regEnv.byId.get('logoutBtn').click();
+  assert.equal(regEnv.byId.get('welcomeSplash').classList.contains('hidden'), true);
 
   // 2) Token hydration + 3 modules + mobile drawer + 401 handling
   let customUrlSeen = '';
@@ -1067,4 +1077,52 @@ test('runtime: offline/null-response practice fallback, <30 leveling merge, and 
   resolveCorrigir();
   await finishPromise;
   assert.equal(flightEnv.byId.get('finishExamBtn').disabled, false, '#finishExamBtn must re-enable after corrigir resolves');
+});
+
+test('runtime: welcome splash greets by time of day on login and celebrates on register', async () => {
+  const env = buildDomHarness({
+    fetchHandler: async (url) => {
+      if (url.endsWith('/auth/login')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            token: 'tok.greet',
+            user: { id: 9, nome: 'Aviador', email: 'a@anac.br', carreira: 'PP', nivelamento_concluido: true },
+          }),
+        };
+      }
+      if (url.endsWith('/questoes')) return { ok: true, status: 200, json: async () => [] };
+      if (url.endsWith('/metricas')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            resumo: { totalSimulados: 0, totalQuestoes: 0, totalAcertos: 0, aproveitamentoGeral: 0, materiasAprovadas: 0, totalMaterias: 5, materiaCritica: null },
+            porMateria: {},
+            pontosFracos: [],
+            historico: [],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+
+  await env.boot();
+
+  assert.equal(env.window.getWelcomeGreeting('login', 8), 'Bom dia, seja bem vindo');
+  assert.equal(env.window.getWelcomeGreeting('login', 14), 'Boa tarde, seja bem vindo');
+  assert.equal(env.window.getWelcomeGreeting('login', 21), 'Boa noite, seja bem vindo');
+  assert.equal(env.window.getWelcomeGreeting('login', 2), 'Boa noite, seja bem vindo');
+  assert.equal(env.window.getWelcomeGreeting('register', 14), 'Parabéns, seja bem vindo à Aerobanca!');
+
+  await env.careerBtns[0].click();
+  env.byId.get('authEmailInput').value = 'a@anac.br';
+  env.byId.get('authPasswordInput').value = 'Senha123';
+  await env.byId.get('authForm').dispatchEvent({ type: 'submit' });
+
+  assert.equal(env.byId.get('welcomeSplash').classList.contains('hidden'), false);
+  assert.match(env.byId.get('welcomeSplashTitle').textContent, /^(Bom dia|Boa tarde|Boa noite), seja bem vindo$/);
+  await env.byId.get('logoutBtn').click();
 });
