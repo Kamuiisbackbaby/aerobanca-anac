@@ -27,21 +27,42 @@ CREATE TABLE IF NOT EXISTS questoes (
   criado_em      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_questoes_materia ON questoes(materia_sigla);
+CREATE TABLE IF NOT EXISTS usuarios (
+  id                    SERIAL PRIMARY KEY,
+  nome                  VARCHAR(120) NOT NULL,
+  email                 VARCHAR(180) UNIQUE NOT NULL,
+  senha_hash            TEXT NOT NULL,
+  carreira              VARCHAR(10) NOT NULL CHECK (carreira IN ('PP', 'PC', 'CMS')),
+  nivelamento_concluido BOOLEAN NOT NULL DEFAULT FALSE,
+  criado_em             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS tentativas_simulado (
+  id                SERIAL PRIMARY KEY,
+  usuario_id        INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  tipo              VARCHAR(20) NOT NULL CHECK (tipo IN ('nivelamento', 'personalizado')),
+  carreira          VARCHAR(10) NOT NULL CHECK (carreira IN ('PP', 'PC', 'CMS')),
+  total_questoes    INTEGER NOT NULL CHECK (total_questoes > 0),
+  total_acertos     INTEGER NOT NULL CHECK (total_acertos >= 0),
+  percentual        INTEGER NOT NULL CHECK (percentual BETWEEN 0 AND 100),
+  detalhes_materias JSONB NOT NULL,
+  criado_em         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tentativas_usuario_data ON tentativas_simulado(usuario_id, criado_em DESC);
 `;
 
 // Cria as tabelas e, se estiverem vazias, carrega as 30 questões iniciais.
-async function init() {
-  await pool.query(SCHEMA);
-  const { rows } = await pool.query("SELECT COUNT(*)::int AS n FROM questoes");
+async function init(targetPool = pool) {
+  await targetPool.query(SCHEMA);
+  const { rows } = await targetPool.query("SELECT COUNT(*)::int AS n FROM questoes");
   if (rows[0].n > 0) return;
   for (const m of seed.materias) {
-    await pool.query(
+    await targetPool.query(
       "INSERT INTO materias (sigla, nome) VALUES ($1,$2) ON CONFLICT DO NOTHING",
       [m.sigla, m.nome]
     );
   }
   for (const q of seed.questoes) {
-    await pool.query(
+    await targetPool.query(
       `INSERT INTO questoes (codigo, materia_sigla, subtopico, dificuldade, enunciado, alternativas, indice_correta, comentario)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (codigo) DO NOTHING`,
       [q.id, q.subject, q.topic, q.difficulty, q.stem, JSON.stringify(q.options), q.correct, q.explanation]
@@ -50,4 +71,4 @@ async function init() {
   console.log(`Seed concluído: ${seed.questoes.length} questões`);
 }
 
-module.exports = { pool, init };
+module.exports = { pool, init, SCHEMA };
