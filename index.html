@@ -2,65 +2,153 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AeroBanca ANAC — Plataforma de Estudos & Simulados de Aviação</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>AeroBanca ANAC — Estudos &amp; Simulados de Aviação</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Sidebar / Top Navigation -->
-  <div class="app-layout">
+  <!-- Auth Screen (Visible when unauthenticated) -->
+  <section class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="32" height="32" viewBox="0 0 64 64" fill="none">
+            <rect width="64" height="64" rx="16" fill="#07132c"/>
+            <path d="M13 38 A19 19 0 0 1 51 38" stroke="#0ea5e9" stroke-width="3" stroke-linecap="round"/>
+            <path d="M12 42 H20 M44 42 H52" stroke="#0ea5e9" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.8"/>
+            <path d="M32 13 L17 46 L32 38.5 Z" fill="#ffffff"/>
+            <path d="M32 13 L47 46 L32 38.5 Z" fill="#38bdf8"/>
+          </svg>
+        </div>
+        <div class="auth-brand-text">
+          <h1>AeroBanca ANAC</h1>
+          <p>Simulados oficiais • Meta 70%</p>
+        </div>
+      </div>
+
+      <div class="auth-mode-tabs" role="tablist" aria-label="Modo de acesso">
+        <button type="button" class="auth-mode-btn active" id="authModeLoginBtn" role="tab" aria-selected="true">Entrar</button>
+        <button type="button" class="auth-mode-btn" id="authModeRegisterBtn" role="tab" aria-selected="false">Criar Conta</button>
+      </div>
+
+      <form id="authForm" class="auth-form" novalidate>
+        <div class="form-group hidden" id="authNameGroup">
+          <label for="authNameInput">Nome</label>
+          <input type="text" id="authNameInput" placeholder="Seu nome completo" autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label for="authEmailInput">E-mail</label>
+          <input type="email" id="authEmailInput" placeholder="piloto@exemplo.com" autocomplete="email" required>
+        </div>
+
+        <div class="form-group">
+          <label for="authPasswordInput">Senha</label>
+          <input type="password" id="authPasswordInput" placeholder="Mínimo 6 caracteres" autocomplete="current-password" minlength="6" required>
+        </div>
+
+        <div class="form-group">
+          <span class="field-label">Carreira de foco <small>(obrigatório)</small></span>
+          <div class="career-cards" id="authCareerCards" role="group" aria-label="Escolha sua carreira ANAC">
+            <button type="button" class="career-card" data-career="PP">
+              <strong>PP</strong>
+              <span>Piloto Privado</span>
+            </button>
+            <button type="button" class="career-card" data-career="PC">
+              <strong>PC</strong>
+              <span>Piloto Comercial</span>
+            </button>
+            <button type="button" class="career-card" data-career="CMS">
+              <strong>CMS</strong>
+              <span>Comissário</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="authFeedback" class="form-feedback hidden" role="status"></div>
+
+        <button type="submit" class="btn btn-primary btn-full" id="authSubmitBtn">Entrar</button>
+      </form>
+
+      <footer class="auth-footer">
+        <span>RBAC 61 • ICA 100-12</span>
+        <span class="meta-glyph" id="authAdminTrigger" aria-hidden="true">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </span>
+      </footer>
+    </div>
+  </section>
+
+  <!-- Authenticated Application Shell -->
+  <div class="app-layout hidden" id="appShell">
+    <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
     <aside class="sidebar" id="sidebar">
       <div class="brand">
-        <div class="brand-logo">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/>
+        <div class="brand-logo" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 64 64" fill="none">
+            <rect width="64" height="64" rx="16" fill="#07132c"/>
+            <path d="M13 38 A19 19 0 0 1 51 38" stroke="#0ea5e9" stroke-width="3" stroke-linecap="round"/>
+            <path d="M12 42 H20 M44 42 H52" stroke="#0ea5e9" stroke-width="2.5" stroke-linecap="round" stroke-opacity="0.8"/>
+            <path d="M32 13 L17 46 L32 38.5 Z" fill="#ffffff"/>
+            <path d="M32 13 L47 46 L32 38.5 Z" fill="#38bdf8"/>
           </svg>
         </div>
         <div class="brand-text">
           <span class="brand-title">AeroBanca</span>
-          <span class="brand-subtitle">Banca ANAC • PP / PC / CMS</span>
+          <span class="brand-subtitle">ANAC • PP / PC / CMS</span>
         </div>
-        <button class="mobile-close-btn" id="closeSidebarBtn" aria-label="Fechar menu">✕</button>
+        <button type="button" class="mobile-close-btn" id="closeSidebarBtn" aria-label="Fechar menu">✕</button>
       </div>
 
       <div class="license-selector">
-        <label for="licenseSelect">Foco da Licença</label>
-        <select id="licenseSelect">
-          <option value="PP">Piloto Privado (PP-A / PP-H)</option>
+        <label for="careerQuickSelect">Carreira ativa</label>
+        <select id="careerQuickSelect">
+          <option value="PP">Piloto Privado (PP)</option>
           <option value="PC">Piloto Comercial (PC / IFR)</option>
           <option value="CMS">Comissário de Voo (CMS)</option>
         </select>
       </div>
 
-      <nav class="nav-menu">
-        <button class="nav-item active" data-view="dashboard">
+      <nav class="nav-menu" aria-label="Módulos principais">
+        <button type="button" class="nav-item active" data-view="dashboard">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-          <span>Painel & Matérias</span>
+          <span>Painel &amp; Matérias</span>
         </button>
-        <button class="nav-item" data-view="diagnostic">
+        <button type="button" class="nav-item" data-view="metrics">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span>Métricas</span>
+        </button>
+        <button type="button" class="nav-item" data-view="simulado">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
-          <span>Simulado de Nivelamento (30q)</span>
-          <span class="nav-badge">Diagnóstico</span>
-        </button>
-        <button class="nav-item" data-view="questions">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
-          <span>Banco de Questões</span>
+          <span>Simulado Personalizado</span>
         </button>
       </nav>
+
+      <div class="sidebar-user">
+        <div class="sidebar-user-info">
+          <strong id="sidebarUserName">Aluno</strong>
+          <span id="sidebarUserEmail">—</span>
+        </div>
+        <button type="button" class="btn btn-outline-light btn-sm" id="logoutBtn">Sair</button>
+      </div>
 
       <div class="sidebar-footer">
         <div class="anac-rule-card">
           <div class="rule-header">
             <span class="status-dot"></span>
-            <strong>Padrão Banca ANAC</strong>
+            <strong>Meta Banca ANAC: 70%</strong>
           </div>
-          <p>Aprovação requer mínimo de <strong>70% de acerto</strong> (14/20 questões) em cada matéria.</p>
           <div class="rule-meta-line">
             <span>RBAC 61 • ICA 100-12</span>
-            <span class="meta-glyph" id="sys RevNode" aria-hidden="true">
+            <span class="meta-glyph" id="sysRevNode" aria-hidden="true">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
             </span>
           </div>
@@ -68,247 +156,219 @@
       </div>
     </aside>
 
-    <!-- Main Content -->
     <div class="main-wrapper">
-      <!-- Topbar -->
-      <header class="topbar">
+      <header class="topbar" id="topbar">
         <div class="topbar-left">
-          <button class="menu-toggle" id="openSidebarBtn" aria-label="Abrir menu">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+          <button type="button" class="menu-toggle" id="toggleSidebarBtn" aria-label="Alternar barra lateral">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
-          <div>
-            <h1 class="page-title" id="pageTitle">Painel de Comando & Matérias</h1>
-            <p class="page-subtitle" id="pageSubtitle">Monitore seu desempenho por área da ANAC e identifique seus pontos cegos</p>
+          <div class="topbar-titles">
+            <h1 class="page-title" id="pageTitle">Painel &amp; Matérias</h1>
+            <p class="page-subtitle" id="pageSubtitle">Visão geral e prática por matéria</p>
           </div>
         </div>
         <div class="topbar-right">
-          <div class="db-pill" title="Integrado com Railway PostgreSQL">
-            <span class="db-dot"></span>
-            <span>DB: Railway PostgreSQL (Cloud)</span>
-          </div>
-          <button class="btn btn-primary" id="quickStartDiagnosticBtn">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            <span>Iniciar Nivelamento (30q)</span>
-          </button>
+          <span class="career-pill" id="topbarCareerBadge">PP</span>
+          <button type="button" class="btn btn-secondary btn-sm topbar-logout-btn" id="topbarLogoutBtn">Sair</button>
         </div>
       </header>
 
-      <!-- VIEW 1: DASHBOARD & SUBJECTS -->
+      <!-- MODULE 1: PAINEL & MATÉRIAS -->
       <main class="view-section active" id="view-dashboard">
-        <!-- Hero Banner for Diagnostic Exam -->
-        <section class="hero-card">
-          <div class="hero-content">
-            <div class="hero-badge">RECOMENDADO PARA INICIAR</div>
-            <h2>Simulado de Nivelamento Inicial — 30 Questões</h2>
-            <p>Avaliação diagnóstica balanceada com <strong>6 questões de cada uma das 5 matérias oficiais da ANAC</strong> (MET, NAV, RPA, CT e TSV). Ao concluir, o sistema gera seu mapa de calor e aponta exatamente onde falta atenção e onde você deve focar.</p>
-            <div class="hero-actions">
-              <button class="btn btn-light" onclick="switchView('diagnostic')">
-                Fazer Simulado de Nivelamento Agora
-              </button>
-              <button class="btn btn-outline-light" id="loadSampleResultBtn">
-                Ver Exemplo de Diagnóstico Pronto
-              </button>
-            </div>
-          </div>
-          <div class="hero-visual">
-            <div class="radar-preview">
-              <div class="radar-circle c1"></div>
-              <div class="radar-circle c2"></div>
-              <div class="radar-sweep"></div>
-              <div class="radar-stat">
-                <span class="radar-number">30</span>
-                <span class="radar-label">Questões Oficiais</span>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <!-- KPI Summary Row -->
-        <section class="stats-grid">
+        <section class="stats-grid" aria-label="Indicadores principais">
           <div class="stat-card">
             <span class="stat-label">Aproveitamento Geral</span>
             <div class="stat-value-row">
               <strong class="stat-value" id="kpiOverallPct">--%</strong>
-              <span class="stat-tag" id="kpiOverallTag">Sem diagnóstico</span>
+              <span class="stat-tag" id="kpiOverallTag">Sem dados</span>
             </div>
-            <p class="stat-helper">Meta mínima ANAC: 70% por matéria</p>
+            <p class="stat-helper">Meta ANAC: 70% por matéria</p>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Matérias Aprovadas (≥70%)</span>
+            <span class="stat-label">Matérias Aprovadas</span>
             <div class="stat-value-row">
               <strong class="stat-value" id="kpiPassedSubjects">0 / 5</strong>
-              <span class="stat-tag tag-blue">Bloco ANAC</span>
+              <span class="stat-tag tag-blue">≥ 70%</span>
             </div>
-            <p class="stat-helper">Todas as 5 áreas precisam atingir 70%</p>
+            <p class="stat-helper">Desempenho na última tentativa</p>
           </div>
           <div class="stat-card">
-            <span class="stat-label">Prioridade Máxima de Foco</span>
+            <span class="stat-label">Prioridade de Foco</span>
             <div class="stat-value-row">
-              <strong class="stat-value stat-focus" id="kpiCriticalSubject">Faça o teste</strong>
+              <strong class="stat-value stat-focus" id="kpiCriticalSubject">--</strong>
             </div>
-            <p class="stat-helper" id="kpiCriticalHelper">Descubra sua matéria mais vulnerável</p>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">Questões no Banco</span>
-            <div class="stat-value-row">
-              <strong class="stat-value" id="kpiTotalQuestions">30</strong>
-              <span class="stat-tag tag-cyan">5 Matérias</span>
-            </div>
-            <p class="stat-helper">Cadastradas e separadas por área</p>
+            <p class="stat-helper" id="kpiCriticalHelper">Conclua um simulado</p>
           </div>
         </section>
 
-        <!-- Diagnostic Breakdown Panel (Appears when diagnostic is completed or demo loaded) -->
-        <section class="diagnostic-report-card hidden" id="dashboardDiagnosticReport">
+        <section class="subjects-section" id="subjectsSection">
           <div class="section-header">
             <div>
-              <span class="eyebrow">RELATÓRIO DE INTELIGÊNCIA DE ESTUDO</span>
-              <h3>Mapa de Atenção & Plano de Foco ANAC</h3>
+              <h3>Matérias Oficiais ANAC</h3>
+              <p class="section-desc">Toque em uma matéria para praticar questões comentadas.</p>
             </div>
-            <button class="btn btn-secondary btn-sm" onclick="switchView('diagnostic')">Refazer Nivelamento</button>
-          </div>
-          <div class="report-columns">
-            <div class="subject-bars-container" id="dashboardSubjectBars">
-              <!-- Populated by JS -->
-            </div>
-            <div class="focus-recommendations" id="dashboardFocusRecommendations">
-              <!-- Populated by JS -->
-            </div>
-          </div>
-        </section>
-
-        <!-- 5 ANAC Subjects Section -->
-        <section class="subjects-section">
-          <div class="section-header">
-            <div>
-              <span class="eyebrow">ÁREAS DO CONHECIMENTO ANAC</span>
-              <h3>Matérias Oficiais Separadas por Bloco</h3>
-            </div>
-            <p class="section-desc">Clique em qualquer matéria para treinar somente questões daquela área específica.</p>
           </div>
 
           <div class="subjects-grid" id="subjectsGrid">
-            <!-- Populated by JS -->
+            <!-- Populated by app.js -->
+          </div>
+        </section>
+
+        <section class="subject-practice-panel hidden" id="subjectPracticePanel">
+          <div class="practice-header">
+            <button type="button" class="btn btn-secondary btn-sm" id="practiceBackBtn">← Voltar às Matérias</button>
+            <h3 id="practiceSubjectTitle">Prática da Matéria</h3>
+          </div>
+          <div class="search-box">
+            <input type="search" id="practiceSearchInput" placeholder="Buscar por código ou subtópico...">
+          </div>
+          <div class="bank-questions-list" id="practiceQuestionsList">
+            <!-- Populated by app.js -->
           </div>
         </section>
       </main>
 
-      <!-- VIEW 2: DIAGNOSTIC SIMULADO (30 QUESTIONS) -->
-      <main class="view-section" id="view-diagnostic">
-        <div class="exam-top-bar">
-          <div class="exam-meta">
-            <span class="badge-subject" id="examCurrentSubjectBadge">MET • Meteorologia</span>
-            <span class="exam-counter" id="examQuestionCounter">Questão 1 de 30</span>
+      <!-- MODULE 2: MÉTRICAS -->
+      <main class="view-section" id="view-metrics">
+        <div class="section-header">
+          <div>
+            <h2>Métricas &amp; Evolução</h2>
+            <p class="section-desc">Histórico real salvo no PostgreSQL.</p>
           </div>
-          <div class="exam-timer-box">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            <span id="examTimer">45:00</span>
-          </div>
-          <div class="exam-actions-top">
-            <button class="btn btn-secondary btn-sm" id="fillDemoDiagnosticBtn" title="Preencher automaticamente para testar o relatório de foco">
-              Simular Respostas Rápidas
-            </button>
-            <button class="btn btn-primary btn-sm" id="finishDiagnosticBtn">
-              Finalizar e Ver Diagnóstico
-            </button>
-          </div>
+          <button type="button" class="btn btn-secondary btn-sm" id="refreshMetricsBtn">Atualizar</button>
         </div>
 
-        <div class="exam-progress-track">
-          <div class="exam-progress-fill" id="examProgressBar" style="width: 3.33%"></div>
+        <div class="metrics-grid" id="metricsContent">
+          <!-- Populated by app.js -->
         </div>
+      </main>
 
-        <div class="exam-layout" id="examActiveContainer">
-          <!-- Question Area -->
-          <div class="question-card">
-            <div class="question-header-meta">
-              <span class="q-id-tag" id="examQCode">#MET-01</span>
-              <span class="q-topic-tag" id="examQTopic">METAR / TAF e Nuvens</span>
-              <span class="q-difficulty" id="examQDifficulty">Nível: Banca ANAC</span>
-            </div>
+      <!-- MODULE 3: SIMULADO PERSONALIZADO & NIVELAMENTO -->
+      <main class="view-section" id="view-simulado">
+        <section class="card-panel simulado-config-card" id="simuladoConfigCard">
+          <div class="panel-header">
+            <h2>Simulado Personalizado</h2>
+            <p>Monte seu treino por matérias e quantidade de questões.</p>
+          </div>
 
-            <p class="question-stem" id="examQuestionStem">
-              Carregando questão...
-            </p>
-
-            <div class="options-list" id="examOptionsList">
-              <!-- Populated by JS -->
-            </div>
-
-            <div class="question-nav-footer">
-              <button class="btn btn-secondary" id="prevQuestionBtn">← Anterior</button>
-              <button class="btn btn-outline-blue" id="flagQuestionBtn">
-                ⚑ Marcar Dúvida
-              </button>
-              <button class="btn btn-primary" id="nextQuestionBtn">Próxima →</button>
+          <div class="sim-config-group">
+            <span class="field-label">Matérias incluídas</span>
+            <div class="sim-subject-checks">
+              <label class="sim-check-pill"><input type="checkbox" name="simSubject" value="MET" checked><span>MET • Meteorologia</span></label>
+              <label class="sim-check-pill"><input type="checkbox" name="simSubject" value="NAV" checked><span>NAV • Navegação</span></label>
+              <label class="sim-check-pill"><input type="checkbox" name="simSubject" value="RPA" checked><span>RPA • Regulamentos</span></label>
+              <label class="sim-check-pill"><input type="checkbox" name="simSubject" value="CT" checked><span>CT • Conhec. Técnicos</span></label>
+              <label class="sim-check-pill"><input type="checkbox" name="simSubject" value="TSV" checked><span>TSV • Teoria de Voo</span></label>
             </div>
           </div>
 
-          <!-- Question Map Navigator (30 questions grouped by subject) -->
-          <aside class="question-map-card">
-            <h4>Mapa da Prova (30 Questões)</h4>
-            <p class="map-subtitle">6 questões por matéria oficial ANAC</p>
-            <div class="map-legend">
-              <span><i class="dot dot-current"></i> Atual</span>
-              <span><i class="dot dot-answered"></i> Respondida</span>
-              <span><i class="dot dot-flagged"></i> Dúvida</span>
+          <div class="form-row-2">
+            <div class="form-group">
+              <label for="simCountSelect">Quantidade de questões</label>
+              <select id="simCountSelect">
+                <option value="10">10 questões</option>
+                <option value="15" selected>15 questões</option>
+                <option value="20">20 questões</option>
+                <option value="30">30 questões</option>
+              </select>
             </div>
-            <div id="examMapGroups" class="map-groups">
-              <!-- Populated by JS -->
+            <div class="form-group sim-timer-option">
+              <label class="sim-toggle-label" for="simTimerToggle">
+                <input type="checkbox" id="simTimerToggle" checked>
+                <span>Ativar cronômetro</span>
+              </label>
             </div>
-          </aside>
-        </div>
+          </div>
 
-        <!-- Diagnostic Result Modal/Screen inside Diagnostic View -->
-        <div class="diagnostic-result-screen hidden" id="examResultScreen">
+          <div class="form-actions">
+            <button type="button" class="btn btn-primary" id="startCustomSimuladoBtn">Iniciar Simulado</button>
+            <button type="button" class="btn btn-secondary" id="startLevelingBtn">Refazer Nivelamento (30q)</button>
+          </div>
+        </section>
+
+        <section class="exam-active-container hidden" id="examActiveContainer">
+          <div class="exam-top-bar">
+            <div class="exam-meta">
+              <span class="badge-subject" id="examCurrentSubjectBadge">MET</span>
+              <span class="exam-counter" id="examQuestionCounter">1 / 30</span>
+            </div>
+            <div class="exam-timer-box" id="examTimerBox">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span id="examTimer">45:00</span>
+            </div>
+            <div class="exam-actions-top">
+              <button type="button" class="btn btn-secondary btn-sm mobile-map-toggle" id="toggleExamMapBtn" aria-expanded="false">Mapa</button>
+              <button type="button" class="btn btn-primary btn-sm" id="finishExamBtn">Finalizar</button>
+            </div>
+          </div>
+
+          <div class="exam-progress-track">
+            <div class="exam-progress-fill" id="examProgressBar" style="width: 0%"></div>
+          </div>
+
+          <div class="exam-layout">
+            <div class="question-card">
+              <div class="question-header-meta">
+                <span class="q-id-tag" id="examQCode">#MET-01</span>
+                <span class="q-topic-tag" id="examQTopic">Tópico</span>
+                <span class="q-difficulty" id="examQDifficulty">Banca ANAC</span>
+              </div>
+
+              <p class="question-stem" id="examQuestionStem">Carregando questão...</p>
+
+              <div class="options-list" id="examOptionsList">
+                <!-- Populated by app.js -->
+              </div>
+
+              <div class="question-nav-footer">
+                <button type="button" class="btn btn-secondary" id="prevQuestionBtn">← Anterior</button>
+                <button type="button" class="btn btn-outline-blue" id="flagQuestionBtn">⚑ Dúvida</button>
+                <button type="button" class="btn btn-primary" id="nextQuestionBtn">Próxima →</button>
+              </div>
+            </div>
+
+            <aside class="question-map-card" id="examMapCard">
+              <h4>Mapa da Prova</h4>
+              <div class="map-legend">
+                <span><i class="dot dot-current"></i> Atual</span>
+                <span><i class="dot dot-answered"></i> Feita</span>
+                <span><i class="dot dot-flagged"></i> Dúvida</span>
+              </div>
+              <div id="examMapGroups" class="map-groups">
+                <!-- Populated by app.js -->
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="diagnostic-result-screen hidden" id="examResultScreen">
           <!-- Populated dynamically when exam finishes -->
-        </div>
+        </section>
       </main>
 
-      <!-- VIEW 3: QUESTION BANK BY SUBJECT -->
-      <main class="view-section" id="view-questions">
-        <div class="filter-bar">
-          <div class="filter-pills" id="bankSubjectPills">
-            <button class="pill active" data-subject="ALL">Todas (30)</button>
-            <button class="pill" data-subject="MET">Meteorologia (MET)</button>
-            <button class="pill" data-subject="NAV">Navegação (NAV)</button>
-            <button class="pill" data-subject="RPA">Regulamentos (RPA)</button>
-            <button class="pill" data-subject="CT">Conhecimentos Técnicos (CT)</button>
-            <button class="pill" data-subject="TSV">Teoria de Voo (TSV)</button>
-          </div>
-          <div class="search-box">
-            <input type="text" id="bankSearchInput" placeholder="Buscar por código (ex: METAR, QNH, RBAC, Vor, Estol)...">
-          </div>
-        </div>
-
-        <div class="bank-questions-list" id="bankQuestionsList">
-          <!-- Populated by JS -->
-        </div>
-      </main>
-
-      <!-- VIEW 4: INTERNAL MANAGEMENT -->
+      <!-- HIDDEN ADMIN VIEW -->
       <main class="view-section" id="view-database">
+        <div class="admin-toolbar">
+          <button type="button" class="btn btn-secondary btn-sm" id="adminBackBtn">← Voltar</button>
+          <button type="button" class="btn btn-secondary btn-sm hidden" id="adminLogoutBtn">Encerrar sessão</button>
+        </div>
+
         <div class="card-panel admin-gate" id="adminGate">
           <span class="eyebrow">SINCRONIZAÇÃO DE DADOS</span>
           <h3>Autenticação de Chave</h3>
-          <p class="gate-desc">Insira a chave de sessão para habilitar a edição do repositório.</p>
+          <p class="gate-desc">Insira a chave administrativa para gerenciar o banco de questões.</p>
           <div class="gate-row">
             <input type="password" id="adminTokenInput" placeholder="Chave" autocomplete="off">
             <button class="btn btn-primary" id="adminLoginBtn" type="button">Validar</button>
           </div>
           <div id="adminGateStatus" class="form-feedback hidden" role="status"></div>
         </div>
-        <div class="admin-toolbar">
-          <button class="btn btn-secondary btn-sm hidden" id="adminLogoutBtn" type="button">Encerrar sessão</button>
-        </div>
 
         <div class="db-grid-layout">
-          <!-- Left: Question Registration Form (Interface) -->
           <div class="card-panel hidden" id="adminFormCard">
             <div class="panel-header">
               <span class="eyebrow">GESTÃO DO BANCO DE QUESTÕES</span>
               <h3>Cadastrar Nova Questão ANAC</h3>
-              <p>Adicione questões separadas por matéria e subtópico diretamente no PostgreSQL.</p>
             </div>
 
             <form id="addQuestionForm" class="form-stack">
@@ -324,7 +384,7 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label for="newQTopic">Subtópico (Foco de Atenção)</label>
+                  <label for="newQTopic">Subtópico</label>
                   <input type="text" id="newQTopic" placeholder="Ex: Altimetria QNH/QNE, METAR, Estol..." required>
                 </div>
               </div>
@@ -350,24 +410,24 @@
 
               <div class="form-group">
                 <label for="newQStem">Enunciado da Questão</label>
-                <textarea id="newQStem" rows="3" placeholder="Digite o enunciado completo no padrão de múltipla escolha da ANAC..." required></textarea>
+                <textarea id="newQStem" rows="3" placeholder="Digite o enunciado completo..." required></textarea>
               </div>
 
               <div class="options-inputs">
                 <div class="form-group">
-                  <label>Alternativa A</label>
+                  <label for="newQOptA">Alternativa A</label>
                   <input type="text" id="newQOptA" placeholder="Texto da alternativa A" required>
                 </div>
                 <div class="form-group">
-                  <label>Alternativa B</label>
+                  <label for="newQOptB">Alternativa B</label>
                   <input type="text" id="newQOptB" placeholder="Texto da alternativa B" required>
                 </div>
                 <div class="form-group">
-                  <label>Alternativa C</label>
+                  <label for="newQOptC">Alternativa C</label>
                   <input type="text" id="newQOptC" placeholder="Texto da alternativa C" required>
                 </div>
                 <div class="form-group">
-                  <label>Alternativa D</label>
+                  <label for="newQOptD">Alternativa D</label>
                   <input type="text" id="newQOptD" placeholder="Texto da alternativa D" required>
                 </div>
               </div>
@@ -383,31 +443,45 @@
                   </select>
                 </div>
                 <div class="form-group">
-                  <label for="newQExplanation">Comentário / Explicação Técnica</label>
-                  <input type="text" id="newQExplanation" placeholder="Resumo do motivo técnico do gabarito..." required>
+                  <label for="newQExplanation">Comentário Técnico</label>
+                  <input type="text" id="newQExplanation" placeholder="Motivo técnico do gabarito..." required>
                 </div>
               </div>
 
               <div class="form-actions">
-                <button type="submit" class="btn btn-primary">Salvar Questão no Banco</button>
-                <button type="button" class="btn btn-secondary" id="exportJsonBtn">Exportar Backup JSON</button>
+                <button type="submit" class="btn btn-primary">Salvar Questão</button>
+                <button type="button" class="btn btn-secondary" id="exportJsonBtn">Exportar JSON</button>
               </div>
               <div id="formFeedback" class="form-feedback hidden"></div>
             </form>
           </div>
 
-          <!-- Right: Cloud Questions List (Only visible after Admin Login) -->
           <div class="card-panel hidden" id="adminCloudCard">
             <div class="panel-header">
-              <span class="eyebrow">QUESTÕES CADASTRADAS NO RAILWAY</span>
-              <h3>Gerenciar Questões na Nuvem</h3>
-              <p>Visualize ou exclua questões salvas no banco de dados PostgreSQL.</p>
+              <span class="eyebrow">POSTGRESQL</span>
+              <h3>Questões na Nuvem</h3>
             </div>
             <div id="adminCloudList" class="cloud-list" style="max-height: 520px;"></div>
           </div>
         </div>
       </main>
     </div>
+
+    <!-- Mobile Bottom Navigation (3 Modules) -->
+    <nav class="mobile-bottom-nav" id="mobileBottomNav" aria-label="Navegação mobile">
+      <button type="button" class="mobile-nav-item active" data-view="dashboard">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        <span>Painel</span>
+      </button>
+      <button type="button" class="mobile-nav-item" data-view="metrics">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span>Métricas</span>
+      </button>
+      <button type="button" class="mobile-nav-item" data-view="simulado">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+        <span>Simulado</span>
+      </button>
+    </nav>
   </div>
 
   <script src="admin.js"></script>
