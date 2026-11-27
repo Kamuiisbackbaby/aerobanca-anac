@@ -163,8 +163,36 @@ function buildDomHarness({ initialToken = '', innerWidth = 1280, fetchHandler } 
   );
   authCareerCards.querySelectorAll = (sel) => (sel.includes('data-career') ? careerBtns : []);
   reg('div', 'authFeedback', ['form-feedback', 'hidden']);
+  reg('div', 'authPrivacyGroup', ['form-group', 'hidden']);
+  reg('input', 'authPrivacyCheck', [], { type: 'checkbox', checked: false });
+  reg('button', 'openPrivacyFromAuthBtn', ['link-btn']);
+  reg('button', 'authFooterPrivacyBtn', ['link-btn']);
   reg('button', 'authSubmitBtn', ['btn', 'btn-primary']);
   reg('span', 'authAdminTrigger', ['meta-glyph']);
+
+  reg('div', 'privacyPolicyModal', ['lgpd-modal-overlay', 'hidden']);
+  reg('button', 'closePrivacyModalBtn');
+  reg('div', 'accountPrivacyModal', ['lgpd-modal-overlay', 'hidden']);
+  reg('button', 'openAccountPrivacyBtn');
+  reg('button', 'closeAccountModalBtn');
+  reg('button', 'openPrivacyFromAccountBtn');
+  reg('form', 'accountProfileForm');
+  reg('input', 'accountNameInput');
+  reg('input', 'accountEmailInput');
+  reg('input', 'accountEmailPasswordInput');
+  reg('div', 'accountProfileFeedback', ['form-feedback', 'hidden']);
+  reg('button', 'saveProfileBtn');
+  reg('form', 'accountPasswordForm');
+  reg('input', 'accountCurrentPasswordInput');
+  reg('input', 'accountNewPasswordInput');
+  reg('div', 'accountPasswordFeedback', ['form-feedback', 'hidden']);
+  reg('button', 'savePasswordBtn');
+  reg('button', 'exportMyDataBtn');
+  reg('div', 'accountExportFeedback', ['form-feedback', 'hidden']);
+  reg('form', 'deleteAccountForm');
+  reg('input', 'deleteAccountPasswordInput');
+  reg('div', 'deleteAccountFeedback', ['form-feedback', 'hidden']);
+  reg('button', 'deleteAccountBtn');
 
   reg('div', 'welcomeSplash', ['welcome-splash', 'hidden']);
   reg('h2', 'welcomeSplashTitle', ['welcome-splash-title']);
@@ -404,9 +432,20 @@ test('index.html loads favicon.svg, auth screen, collapsible sidebar, mobile bot
     'authEmailInput',
     'authPasswordInput',
     'authCareerCards',
+    'authPrivacyGroup',
+    'authPrivacyCheck',
+    'openPrivacyFromAuthBtn',
+    'authFooterPrivacyBtn',
     'authSubmitBtn',
     'authFeedback',
     'authAdminTrigger',
+    'privacyPolicyModal',
+    'accountPrivacyModal',
+    'openAccountPrivacyBtn',
+    'accountProfileForm',
+    'accountPasswordForm',
+    'exportMyDataBtn',
+    'deleteAccountForm',
     'welcomeSplash',
     'welcomeSplashTitle',
     'appShell',
@@ -460,8 +499,8 @@ test('index.html loads favicon.svg, auth screen, collapsible sidebar, mobile bot
     assert.match(indexHtml, new RegExp(`data-career="${career}"`), `Career card ${career} must exist`);
   }
 
-  for (const forbidden of ['view-questions', 'loadSampleResultBtn', 'fillDemoDiagnosticBtn', 'sys RevNode']) {
-    assert.equal(indexHtml.includes(forbidden), false, `index.html must not contain legacy "${forbidden}"`);
+  for (const forbidden of ['view-questions', 'loadSampleResultBtn', 'fillDemoDiagnosticBtn', 'sys RevNode', 'fonts.googleapis.com', 'fonts.gstatic.com']) {
+    assert.equal(indexHtml.includes(forbidden), false, `index.html must not contain legacy/external "${forbidden}"`);
   }
 });
 
@@ -763,10 +802,16 @@ test('runtime: register mode, token bootstrap, career switch, Module 1 practice,
   await regEnv.boot();
   await regEnv.byId.get('authModeRegisterBtn').click();
   assert.equal(regEnv.byId.get('authNameGroup').classList.contains('hidden'), false);
+  assert.equal(regEnv.byId.get('authPrivacyGroup').classList.contains('hidden'), false);
   regEnv.byId.get('authNameInput').value = 'Piloto Teste';
   regEnv.byId.get('authEmailInput').value = 'novo@anac.br';
   regEnv.byId.get('authPasswordInput').value = 'Senha123';
   await regEnv.careerBtns[1].click(); // PC
+  // Deve bloquear cadastro sem aceite LGPD
+  const callsBeforeConsent = regEnv.fetchCalls.length;
+  await regEnv.byId.get('authForm').dispatchEvent({ type: 'submit' });
+  assert.equal(regEnv.fetchCalls.length, callsBeforeConsent, 'Register without LGPD consent must be blocked');
+  regEnv.byId.get('authPrivacyCheck').checked = true;
   await regEnv.byId.get('authForm').dispatchEvent({ type: 'submit' });
   assert.equal(regEnv.sessionStorage.getItem('aerobanca_user_token'), 'reg.token.123');
   assert.equal(regEnv.byId.get('view-dashboard').classList.contains('active'), true);
@@ -1125,4 +1170,280 @@ test('runtime: welcome splash greets by time of day on login and celebrates on r
   assert.equal(env.byId.get('welcomeSplash').classList.contains('hidden'), false);
   assert.match(env.byId.get('welcomeSplashTitle').textContent, /^(Bom dia|Boa tarde|Boa noite), seja bem vindo$/);
   await env.byId.get('logoutBtn').click();
+});
+
+test('runtime: LGPD modals allow reading privacy policy, rectifying profile, exporting data, and deleting account', async () => {
+  let profilePatched = false;
+  let exported = false;
+  let deleted = false;
+
+  const env = buildDomHarness({
+    initialToken: 'tok.lgpd',
+    fetchHandler: async (url, opts = {}) => {
+      if (url.endsWith('/auth/me') && (!opts.method || opts.method === 'GET')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user: { id: 10, nome: 'Piloto Original', email: 'orig@anac.br', carreira: 'PP', nivelamento_concluido: true },
+          }),
+        };
+      }
+      if (url.endsWith('/auth/me') && opts.method === 'PATCH') {
+        profilePatched = true;
+        const body = JSON.parse(opts.body);
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user: { id: 10, nome: body.nome, email: body.email, carreira: 'PP', nivelamento_concluido: true },
+          }),
+        };
+      }
+      if (url.endsWith('/auth/me/export')) {
+        exported = true;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ titular: { id: 10, nome: 'Piloto Atualizado' }, tentativas_simulado: [] }),
+        };
+      }
+      if (url.endsWith('/auth/me') && opts.method === 'DELETE') {
+        deleted = true;
+        return { ok: true, status: 200, json: async () => ({ ok: true }) };
+      }
+      if (url.endsWith('/questoes')) return { ok: true, status: 200, json: async () => [] };
+      if (url.endsWith('/metricas')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            resumo: { totalSimulados: 0, totalQuestoes: 0, totalAcertos: 0, aproveitamentoGeral: 0, materiasAprovadas: 0, totalMaterias: 5, materiaCritica: null },
+            porMateria: {},
+            pontosFracos: [],
+            historico: [],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+
+  await env.boot();
+
+  // Open privacy modal from account modal
+  await env.byId.get('openAccountPrivacyBtn').click();
+  assert.equal(env.byId.get('accountPrivacyModal').classList.contains('hidden'), false);
+  assert.equal(env.byId.get('accountNameInput').value, 'Piloto Original');
+
+  await env.byId.get('openPrivacyFromAccountBtn').click();
+  assert.equal(env.byId.get('privacyPolicyModal').classList.contains('hidden'), false);
+  await env.byId.get('closePrivacyModalBtn').click();
+  assert.equal(env.byId.get('privacyPolicyModal').classList.contains('hidden'), true);
+
+  // Update profile
+  env.byId.get('accountNameInput').value = 'Piloto Atualizado';
+  await env.byId.get('accountProfileForm').dispatchEvent({ type: 'submit' });
+  assert.equal(profilePatched, true);
+  assert.equal(env.byId.get('sidebarUserName').textContent, 'Piloto Atualizado');
+
+  // Export data
+  await env.byId.get('exportMyDataBtn').click();
+  assert.equal(exported, true);
+
+  // Delete account
+  env.byId.get('deleteAccountPasswordInput').value = 'SenhaForte123';
+  await env.byId.get('deleteAccountForm').dispatchEvent({ type: 'submit' });
+  assert.equal(deleted, true);
+  assert.equal(env.sessionStorage.getItem('aerobanca_user_token'), null);
+  assert.equal(env.authScreen.classList.contains('hidden'), false);
+});
+
+test('runtime: post-exam error review renders escaped errors, subject filters, and 100% perfect state', async () => {
+  let submitCount = 0;
+  const mockQuestions = [
+    {
+      id: 'MET-01',
+      subject: 'MET',
+      topic: 'Altimetria <script>xss1</script>',
+      difficulty: 'Banca ANAC',
+      stem: 'Pergunta MET <img src=x onerror=1>?',
+      options: ['Opt A', 'Opt B <b>ok</b>', 'Opt C <svg onload=1>', 'Opt D'],
+    },
+    {
+      id: 'NAV-01',
+      subject: 'NAV',
+      topic: 'Proas <script>xss2</script>',
+      difficulty: 'Banca ANAC',
+      stem: 'Pergunta NAV <script>bad</script>?',
+      options: ['100', '138', '120', '118'],
+    },
+    {
+      id: 'RPA-01',
+      subject: 'RPA',
+      topic: 'Mínimos VFR',
+      difficulty: 'Banca ANAC',
+      stem: 'Pergunta RPA?',
+      options: ['A', 'B', 'C', 'D'],
+    },
+  ];
+
+  const env = buildDomHarness({
+    initialToken: 'tok.review',
+    fetchHandler: async (url) => {
+      if (url.endsWith('/auth/me')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            user: { id: 12, nome: 'Piloto Review', email: 'rev@anac.br', carreira: 'PP', nivelamento_concluido: true },
+          }),
+        };
+      }
+      if (url.endsWith('/questoes')) {
+        return { ok: true, status: 200, json: async () => mockQuestions };
+      }
+      if (url.endsWith('/metricas')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            resumo: { totalSimulados: 1, totalQuestoes: 3, totalAcertos: 1, aproveitamentoGeral: 33, materiasAprovadas: 1, totalMaterias: 5, materiaCritica: null },
+            porMateria: {},
+            pontosFracos: [],
+            historico: [],
+          }),
+        };
+      }
+      if (url.includes('/simulado/personalizado')) {
+        return { ok: true, status: 200, json: async () => mockQuestions };
+      }
+      if (url.endsWith('/simulado/corrigir')) {
+        submitCount += 1;
+        if (submitCount === 1) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              tentativaId: 50,
+              tipo: 'personalizado',
+              carreira: 'PP',
+              total_questoes: 3,
+              total_acertos: 1,
+              percentual: 33,
+              nivelamento_concluido: true,
+              porMateria: {
+                MET: { total: 1, acertos: 0, percentual: 0, erradas: [{ id: 'MET-01', topic: 'Altimetria <script>xss1</script>' }] },
+                NAV: { total: 1, acertos: 0, percentual: 0, erradas: [{ id: 'NAV-01', topic: 'Proas <script>xss2</script>' }] },
+                RPA: { total: 1, acertos: 1, percentual: 100, erradas: [] },
+              },
+              gabaritoErros: [
+                {
+                  numero: 1,
+                  id: 'MET-01',
+                  subject: 'MET',
+                  topic: 'Altimetria <script>xss1</script>',
+                  difficulty: 'Banca ANAC',
+                  stem: 'Pergunta MET <img src=x onerror=1>?',
+                  options: ['Opt A', 'Opt B <b>ok</b>', 'Opt C <svg onload=1>', 'Opt D'],
+                  chosen: 2,
+                  correct: 1,
+                  explanation: 'Explicação MET <script>evil()</script>',
+                },
+                {
+                  numero: 2,
+                  id: 'NAV-01',
+                  subject: 'NAV',
+                  topic: 'Proas <script>xss2</script>',
+                  difficulty: 'Banca ANAC',
+                  stem: 'Pergunta NAV <script>bad</script>?',
+                  options: ['100', '138', '120', '118'],
+                  chosen: null,
+                  correct: 1,
+                  explanation: 'Explicação NAV <img src=y>',
+                },
+              ],
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            tentativaId: 51,
+            tipo: 'personalizado',
+            carreira: 'PP',
+            total_questoes: 3,
+            total_acertos: 3,
+            percentual: 100,
+            nivelamento_concluido: true,
+            porMateria: {
+              MET: { total: 1, acertos: 1, percentual: 100, erradas: [] },
+              NAV: { total: 1, acertos: 1, percentual: 100, erradas: [] },
+              RPA: { total: 1, acertos: 1, percentual: 100, erradas: [] },
+            },
+            gabaritoErros: [],
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    },
+  });
+
+  await env.boot();
+  await env.navButtons[2].click();
+  await env.byId.get('startCustomSimuladoBtn').click();
+
+  // Q1 (MET-01): answer wrong (2); Q2 (NAV-01): leave blank; Q3 (RPA-01): answer right (1)
+  env.context.selectExamOption(2);
+  env.context.jumpToExamQuestion(2);
+  env.context.selectExamOption(1);
+  await env.byId.get('finishExamBtn').click();
+
+  const html = env.byId.get('examResultScreen').innerHTML;
+  assert.equal(html.includes('error-review-section'), true);
+  assert.equal(html.includes('Gabarito dos Seus Erros'), true);
+  assert.equal(html.includes('is-wrong'), true);
+  assert.equal(html.includes('Sua resposta'), true);
+  assert.equal(html.includes('is-correct'), true);
+  assert.equal(html.includes('Gabarito'), true);
+  assert.equal(html.includes('Em branco'), true);
+  assert.equal(html.includes('Explicação MET &lt;script&gt;evil()&lt;/script&gt;'), true);
+  assert.equal(html.includes('Explicação NAV &lt;img src=y&gt;'), true);
+  assert.equal(html.includes('<script>'), false);
+  assert.equal(html.includes('<img '), false);
+  assert.equal(html.includes('<svg '), false);
+  assert.equal(html.includes('data-error-filter="ALL"'), true);
+  assert.equal(html.includes('data-error-filter="MET"'), true);
+  assert.equal(html.includes('data-error-filter="NAV"'), true);
+
+  // Filter to MET only
+  env.window.applyExamErrorFilter('MET');
+  const filteredHtml = env.byId.get('examResultScreen').innerHTML;
+  assert.match(
+    filteredHtml,
+    /<article[\s\S]*?class="error-review-card\s*"[\s\S]*?data-error-subject="MET"/
+  );
+  assert.match(
+    filteredHtml,
+    /<article[\s\S]*?class="error-review-card\s+hidden"[\s\S]*?data-error-subject="NAV"/
+  );
+  assert.match(
+    filteredHtml,
+    /class="error-filter-pill\s+active"\s+data-error-filter="MET"/
+  );
+
+  // Start a new exam with 100% score -> positive zero-error state
+  env.context.resetSimuladoToConfig();
+  await env.byId.get('startCustomSimuladoBtn').click();
+  env.context.selectExamOption(1);
+  env.context.jumpToExamQuestion(1);
+  env.context.selectExamOption(1);
+  env.context.jumpToExamQuestion(2);
+  env.context.selectExamOption(1);
+  await env.byId.get('finishExamBtn').click();
+
+  const perfectHtml = env.byId.get('examResultScreen').innerHTML;
+  assert.equal(perfectHtml.includes('Nenhum erro neste simulado!'), true);
+  assert.equal(perfectHtml.includes('data-error-card="true"'), false);
 });

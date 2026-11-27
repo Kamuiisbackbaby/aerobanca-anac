@@ -1,6 +1,8 @@
 const crypto = require("node:crypto");
 
 const VALID_CAREERS = Object.freeze(["PP", "PC", "CMS"]);
+const PRIVACY_VERSION = "2026-11";
+const MIN_PASSWORD_LENGTH = 8;
 
 const DEFAULT_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
 const SCRYPT_KEY_LENGTH = 64;
@@ -75,14 +77,18 @@ function verifyPassword(password, storedHash) {
 }
 
 /**
- * Resolves the HMAC signing secret from explicit configuration or derives a deterministic fallback.
- * @param {{ authSecret?: string, adminToken?: string, databaseUrl?: string }} [options]
+ * Resolves the HMAC signing secret from explicit configuration or derives a deterministic fallback
+ * in non-production environments. In production, AUTH_SECRET is strictly required.
+ * @param {{ authSecret?: string, adminToken?: string, databaseUrl?: string, nodeEnv?: string }} [options]
  * @returns {{ secret: string, isFallback: boolean }}
  */
-function resolveAuthSecret({ authSecret, adminToken, databaseUrl } = {}) {
+function resolveAuthSecret({ authSecret, adminToken, databaseUrl, nodeEnv = process.env.NODE_ENV } = {}) {
   const explicit = typeof authSecret === "string" ? authSecret.trim() : "";
   if (explicit) {
     return { secret: explicit, isFallback: false };
+  }
+  if (nodeEnv === "production") {
+    throw new Error("AUTH_SECRET é obrigatório em ambiente de produção.");
   }
   const fallback = crypto
     .createHash("sha256")
@@ -92,8 +98,8 @@ function resolveAuthSecret({ authSecret, adminToken, databaseUrl } = {}) {
 }
 
 /**
- * Signs a session payload using HMAC-SHA256 and base64url encoding.
- * @param {{ uid: number, email: string }} payload
+ * Signs a minimized session payload (no PII like email) using HMAC-SHA256 and base64url encoding.
+ * @param {{ uid: number, tv?: number }} payload
  * @param {string} secret
  * @param {number} [ttlSeconds]
  * @returns {string}
@@ -103,9 +109,10 @@ function signToken(payload, secret, ttlSeconds = DEFAULT_TOKEN_TTL_SECONDS) {
     throw new Error("Auth secret is required");
   }
   const nowSeconds = Math.floor(Date.now() / 1000);
+  const tv = Number.isInteger(payload.tv) && payload.tv >= 1 ? payload.tv : 1;
   const body = {
     uid: payload.uid,
-    email: payload.email,
+    tv,
     exp: nowSeconds + ttlSeconds,
   };
   const encoded = Buffer.from(JSON.stringify(body), "utf8").toString("base64url");
@@ -117,7 +124,7 @@ function signToken(payload, secret, ttlSeconds = DEFAULT_TOKEN_TTL_SECONDS) {
  * Verifies an HMAC-SHA256 signed token and checks its expiration.
  * @param {string} token
  * @param {string} secret
- * @returns {{ uid: number, email: string, exp: number } | null}
+ * @returns {{ uid: number, tv: number, exp: number } | null}
  */
 function verifyToken(token, secret) {
   if (typeof token !== "string" || typeof secret !== "string" || !secret) {
@@ -143,11 +150,14 @@ function verifyToken(token, secret) {
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
+  const tv = parsed && parsed.tv === undefined ? 1 : parsed && parsed.tv;
   if (
     !parsed ||
     typeof parsed !== "object" ||
-    typeof parsed.uid !== "number" ||
-    typeof parsed.email !== "string" ||
+    !Number.isInteger(parsed.uid) ||
+    parsed.uid <= 0 ||
+    !Number.isInteger(tv) ||
+    tv < 1 ||
     typeof parsed.exp !== "number" ||
     !Number.isFinite(parsed.exp) ||
     parsed.exp <= nowSeconds
@@ -155,11 +165,13 @@ function verifyToken(token, secret) {
     return null;
   }
 
-  return { uid: parsed.uid, email: parsed.email, exp: parsed.exp };
+  return { uid: parsed.uid, tv, exp: parsed.exp };
 }
 
 module.exports = {
   VALID_CAREERS,
+  PRIVACY_VERSION,
+  MIN_PASSWORD_LENGTH,
   normalizeEmail,
   isValidEmail,
   isValidCareer,

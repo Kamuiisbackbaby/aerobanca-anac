@@ -23,16 +23,21 @@ test('hashPassword produces unique salted scrypt hashes and verifyPassword valid
   assert.equal(verifyPassword('Aviao123!', 'invalido'), false);
 });
 
-test('signToken and verifyToken validate HMAC signature and expiration', () => {
+test('signToken and verifyToken validate HMAC signature, token version, minimization, and expiration', () => {
   const secret = 'segredo-teste-aerobanca';
-  const token = signToken({ uid: 42, email: 'piloto@anac.br' }, secret, 3600);
+  const token = signToken({ uid: 42, tv: 3, email: 'piloto@anac.br' }, secret, 3600);
+  // Minimização LGPD: e-mail não deve aparecer no payload base64url do token
+  const rawPayload = Buffer.from(token.split('.')[0], 'base64url').toString('utf8');
+  assert.equal(rawPayload.includes('piloto@anac.br'), false);
+
   const decoded = verifyToken(token, secret);
   assert.equal(decoded.uid, 42);
-  assert.equal(decoded.email, 'piloto@anac.br');
+  assert.equal(decoded.tv, 3);
+  assert.equal('email' in decoded, false);
   assert.equal(verifyToken(token, 'outro-segredo'), null);
   assert.equal(verifyToken(token.slice(0, -2) + 'xx', secret), null);
 
-  const expired = signToken({ uid: 42, email: 'piloto@anac.br' }, secret, -10);
+  const expired = signToken({ uid: 42, tv: 1 }, secret, -10);
   assert.equal(verifyToken(expired, secret), null);
 });
 
@@ -47,13 +52,18 @@ test('email and career validators enforce PP/PC/CMS and normalized email', () =>
   assert.equal(isValidCareer('PLA'), false);
 });
 
-test('resolveAuthSecret prefers explicit authSecret and derives deterministic fallback otherwise', () => {
-  const explicit = resolveAuthSecret({ authSecret: 'meu-segredo', adminToken: 'adm' });
+test('resolveAuthSecret prefers explicit authSecret, derives fallback in dev, and throws in production', () => {
+  const explicit = resolveAuthSecret({ authSecret: 'meu-segredo', adminToken: 'adm', nodeEnv: 'production' });
   assert.equal(explicit.secret, 'meu-segredo');
   assert.equal(explicit.isFallback, false);
 
-  const fb1 = resolveAuthSecret({ adminToken: 'adm', databaseUrl: 'pg://x' });
-  const fb2 = resolveAuthSecret({ adminToken: 'adm', databaseUrl: 'pg://x' });
+  const fb1 = resolveAuthSecret({ adminToken: 'adm', databaseUrl: 'pg://x', nodeEnv: 'development' });
+  const fb2 = resolveAuthSecret({ adminToken: 'adm', databaseUrl: 'pg://x', nodeEnv: 'development' });
   assert.equal(fb1.isFallback, true);
   assert.equal(fb1.secret, fb2.secret);
+
+  assert.throws(
+    () => resolveAuthSecret({ adminToken: 'adm', databaseUrl: 'pg://x', nodeEnv: 'production' }),
+    /AUTH_SECRET/
+  );
 });

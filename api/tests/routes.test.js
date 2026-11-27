@@ -13,9 +13,11 @@ function createMockPool() {
     nextUserId: 1,
     nextQuestaoId: 1,
     nextTentativaId: 1,
+    nextAuditId: 1,
     clockMs: Date.UTC(2026, 10, 24, 12, 0, 0),
     usuarios: [],
     tentativas: [],
+    auditLogs: [],
     questoes: seed.questoes.map((q, idx) => ({
       id: idx + 1,
       codigo: q.id,
@@ -131,34 +133,86 @@ function createMockPool() {
         return { rows: [], rowCount: before - state.questoes.length };
       }
 
+      // Insert audit_log
+      if (/^INSERT INTO audit_logs /i.test(sql)) {
+        const [usuario_id, ator, acao, detalhesRaw] = params;
+        state.auditLogs.push({
+          id: state.nextAuditId++,
+          usuario_id,
+          ator,
+          acao,
+          detalhes: typeof detalhesRaw === 'string' ? JSON.parse(detalhesRaw) : detalhesRaw,
+          criado_em: new Date((state.clockMs += 1000)),
+        });
+        return { rows: [], rowCount: 1 };
+      }
+
       // Select user id by email
       if (/^SELECT id FROM usuarios WHERE email = \$1$/i.test(sql)) {
         const user = state.usuarios.find((u) => u.email === params[0]);
         return { rows: user ? [{ id: user.id }] : [] };
       }
 
+      // Select user senha_hash by id
+      if (/^SELECT senha_hash FROM usuarios WHERE id = \$1$/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[0]);
+        return { rows: user ? [{ senha_hash: user.senha_hash }] : [] };
+      }
+
       // Select user with senha_hash by email
-      if (/^SELECT id, nome, email, senha_hash, carreira, nivelamento_concluido FROM usuarios WHERE email = \$1$/i.test(sql)) {
+      if (/^SELECT id, nome, email, senha_hash, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em FROM usuarios WHERE email = \$1$/i.test(sql)) {
         const user = state.usuarios.find((u) => u.email === params[0]);
         return { rows: user ? [{ ...user }] : [] };
       }
 
-      // Select user by id
-      if (/^SELECT id, nome, email, carreira, nivelamento_concluido FROM usuarios WHERE id = \$1$/i.test(sql)) {
+      // Select user by id (requireAuth)
+      if (/^SELECT id, nome, email, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em FROM usuarios WHERE id = \$1$/i.test(sql)) {
         const user = state.usuarios.find((u) => u.id === params[0]);
         if (!user) return { rows: [] };
-        const { id, nome, email, carreira, nivelamento_concluido } = user;
-        return { rows: [{ id, nome, email, carreira, nivelamento_concluido }] };
+        return { rows: [{ ...user }] };
+      }
+
+      // Select user for export
+      if (/^SELECT id, nome, email, carreira, nivelamento_concluido, privacidade_versao, privacidade_aceita_em, ultimo_acesso_em, criado_em FROM usuarios WHERE id = \$1$/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[0]);
+        if (!user) return { rows: [] };
+        const {
+          id,
+          nome,
+          email,
+          carreira,
+          nivelamento_concluido,
+          privacidade_versao,
+          privacidade_aceita_em,
+          ultimo_acesso_em,
+          criado_em,
+        } = user;
+        return {
+          rows: [
+            {
+              id,
+              nome,
+              email,
+              carreira,
+              nivelamento_concluido,
+              privacidade_versao,
+              privacidade_aceita_em,
+              ultimo_acesso_em,
+              criado_em,
+            },
+          ],
+        };
       }
 
       // Insert user
       if (/^INSERT INTO usuarios /i.test(sql)) {
-        const [nome, email, senha_hash, carreira] = params;
+        const [nome, email, senha_hash, carreira, privacidade_versao] = params;
         if (state.usuarios.some((u) => u.email === email)) {
           const err = new Error('duplicate key value violates unique constraint');
           err.code = '23505';
           throw err;
         }
+        const now = new Date((state.clockMs += 1000));
         const user = {
           id: state.nextUserId++,
           nome,
@@ -166,20 +220,30 @@ function createMockPool() {
           senha_hash,
           carreira,
           nivelamento_concluido: false,
-          criado_em: new Date((state.clockMs += 1000)),
+          token_version: 1,
+          privacidade_aceita_em: now,
+          privacidade_versao,
+          ultimo_acesso_em: now,
+          criado_em: now,
         };
         state.usuarios.push(user);
-        return {
-          rows: [
-            {
-              id: user.id,
-              nome: user.nome,
-              email: user.email,
-              carreira: user.carreira,
-              nivelamento_concluido: user.nivelamento_concluido,
-            },
-          ],
-        };
+        return { rows: [{ ...user }] };
+      }
+
+      // Update user career + ultimo_acesso_em (login)
+      if (/^UPDATE usuarios SET carreira = \$1, ultimo_acesso_em = NOW\(\) WHERE id = \$2/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[1]);
+        if (!user) return { rows: [] };
+        user.carreira = params[0];
+        user.ultimo_acesso_em = new Date((state.clockMs += 1000));
+        return { rows: [{ ...user }] };
+      }
+
+      // Update ultimo_acesso_em only
+      if (/^UPDATE usuarios SET ultimo_acesso_em = NOW\(\) WHERE id = \$1$/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[0]);
+        if (user) user.ultimo_acesso_em = new Date((state.clockMs += 1000));
+        return { rows: [], rowCount: user ? 1 : 0 };
       }
 
       // Update user career
@@ -187,17 +251,40 @@ function createMockPool() {
         const user = state.usuarios.find((u) => u.id === params[1]);
         if (!user) return { rows: [] };
         user.carreira = params[0];
-        return {
-          rows: [
-            {
-              id: user.id,
-              nome: user.nome,
-              email: user.email,
-              carreira: user.carreira,
-              nivelamento_concluido: user.nivelamento_concluido,
-            },
-          ],
-        };
+        return { rows: [{ ...user }] };
+      }
+
+      // Update user profile (nome, email)
+      if (/^UPDATE usuarios SET nome = \$1, email = \$2 WHERE id = \$3/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[2]);
+        if (!user) return { rows: [] };
+        user.nome = params[0];
+        user.email = params[1];
+        return { rows: [{ ...user }] };
+      }
+
+      // Update password + increment token_version
+      if (/^UPDATE usuarios SET senha_hash = \$1, token_version = token_version \+ 1 WHERE id = \$2/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[1]);
+        if (!user) return { rows: [] };
+        user.senha_hash = params[0];
+        user.token_version += 1;
+        return { rows: [{ token_version: user.token_version }] };
+      }
+
+      // Logout (increment token_version)
+      if (/^UPDATE usuarios SET token_version = token_version \+ 1 WHERE id = \$1$/i.test(sql)) {
+        const user = state.usuarios.find((u) => u.id === params[0]);
+        if (user) user.token_version += 1;
+        return { rows: [], rowCount: user ? 1 : 0 };
+      }
+
+      // Delete user (CASCADE deletes tentativas)
+      if (/^DELETE FROM usuarios WHERE id = \$1$/i.test(sql)) {
+        const before = state.usuarios.length;
+        state.usuarios = state.usuarios.filter((u) => u.id !== params[0]);
+        state.tentativas = state.tentativas.filter((t) => t.usuario_id !== params[0]);
+        return { rows: [], rowCount: before - state.usuarios.length };
       }
 
       // Mark nivelamento_concluido = TRUE
@@ -378,29 +465,37 @@ test('POST /auth/register validates career/inputs, hashes password, rejects dupl
 
   const shortPass = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Comandante', email: 'cmd@anac.br', senha: '123', carreira: 'PP' },
+    body: { nome: 'Comandante', email: 'cmd@anac.br', senha: '1234567', carreira: 'PP', aceite_privacidade: true },
   });
   assert.equal(shortPass.status, 400);
 
+  const missingConsent = await api('/auth/register', {
+    method: 'POST',
+    body: { nome: 'Comandante', email: 'cmd@anac.br', senha: 'Segredo123', carreira: 'PP' },
+  });
+  assert.equal(missingConsent.status, 400);
+
   const reg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: '  Ana Clara  ', email: ' Ana@ANAC.BR ', senha: 'Segredo123', carreira: 'PP' },
+    body: { nome: '  Ana Clara  ', email: ' Ana@ANAC.BR ', senha: 'Segredo123', carreira: 'PP', aceite_privacidade: true },
   });
   assert.equal(reg.status, 201);
   assert.ok(reg.body.token);
-  assert.deepEqual(reg.body.user, {
-    id: 1,
-    nome: 'Ana Clara',
-    email: 'ana@anac.br',
-    carreira: 'PP',
-    nivelamento_concluido: false,
-  });
+  assert.equal(reg.body.user.id, 1);
+  assert.equal(reg.body.user.nome, 'Ana Clara');
+  assert.equal(reg.body.user.email, 'ana@anac.br');
+  assert.equal(reg.body.user.carreira, 'PP');
+  assert.equal(reg.body.user.nivelamento_concluido, false);
+  assert.equal(reg.body.user.privacidade_versao, '2026-11');
+  assert.ok(reg.body.user.privacidade_aceita_em);
   assert.equal('senha_hash' in reg.body.user, false);
+  assert.equal('token_version' in reg.body.user, false);
   assert.match(pool.state.usuarios[0].senha_hash, /^scrypt\$[0-9a-f]{32}\$[0-9a-f]{128}$/);
+  assert.equal(pool.state.auditLogs.some((l) => l.acao === 'conta_criada' && l.usuario_id === 1), true);
 
   const dup = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Outra', email: 'ANA@anac.br', senha: 'Segredo123', carreira: 'PC' },
+    body: { nome: 'Outra', email: 'ANA@anac.br', senha: 'Segredo123', carreira: 'PC', aceite_privacidade: true },
   });
   assert.equal(dup.status, 409);
 });
@@ -410,7 +505,7 @@ test('POST /auth/login requires career, verifies credentials, and updates career
 
   await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Marcos', email: 'marcos@anac.br', senha: 'VooSeguro99', carreira: 'PP' },
+    body: { nome: 'Marcos', email: 'marcos@anac.br', senha: 'VooSeguro99', carreira: 'PP', aceite_privacidade: true },
   });
 
   const missingCareer = await api('/auth/login', {
@@ -452,12 +547,12 @@ test('protected routes reject missing, malformed, tampered, and expired Bearer t
   const { api } = await startServer(t);
   const reg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Piloto', email: 'piloto@anac.br', senha: 'Senha123', carreira: 'PC' },
+    body: { nome: 'Piloto', email: 'piloto@anac.br', senha: 'Senha123', carreira: 'PC', aceite_privacidade: true },
   });
   const validToken = reg.body.token;
   const tamperedToken = validToken.slice(0, -2) + (validToken.endsWith('aa') ? 'bb' : 'aa');
-  const expiredToken = signToken({ uid: reg.body.user.id, email: reg.body.user.email }, AUTH_SECRET, -10);
-  const ghostUserToken = signToken({ uid: 9999, email: 'ghost@anac.br' }, AUTH_SECRET, 3600);
+  const expiredToken = signToken({ uid: reg.body.user.id, tv: 1 }, AUTH_SECRET, -10);
+  const ghostUserToken = signToken({ uid: 9999, tv: 1 }, AUTH_SECRET, 3600);
 
   const protectedCalls = [
     { method: 'GET', path: '/auth/me' },
@@ -504,7 +599,7 @@ test('GET /simulado/personalizado omits answers and POST /questoes/:codigo/respo
   const { api } = await startServer(t);
   const reg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Aluno', email: 'aluno@anac.br', senha: 'Senha123', carreira: 'PP' },
+    body: { nome: 'Aluno', email: 'aluno@anac.br', senha: 'Senha123', carreira: 'PP', aceite_privacidade: true },
   });
   const token = reg.body.token;
 
@@ -570,7 +665,7 @@ test('POST /simulado/corrigir enforces nivelamento integrity and counts blank pe
   const { api, pool } = await startServer(t);
   const reg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Cadete', email: 'cadete@anac.br', senha: 'Senha123', carreira: 'PP' },
+    body: { nome: 'Cadete', email: 'cadete@anac.br', senha: 'Senha123', carreira: 'PP', aceite_privacidade: true },
   });
   const token = reg.body.token;
   const all30 = pool.state.questoes.slice(0, 30);
@@ -679,13 +774,13 @@ test('GET /metricas scopes by user, uses ultimoPercentual consistently, and caps
 
   const userAReg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Piloto A', email: 'a@anac.br', senha: 'Senha123', carreira: 'PP' },
+    body: { nome: 'Piloto A', email: 'a@anac.br', senha: 'Senha123', carreira: 'PP', aceite_privacidade: true },
   });
   const tokenA = userAReg.body.token;
 
   const userBReg = await api('/auth/register', {
     method: 'POST',
-    body: { nome: 'Piloto B', email: 'b@anac.br', senha: 'Senha123', carreira: 'PC' },
+    body: { nome: 'Piloto B', email: 'b@anac.br', senha: 'Senha123', carreira: 'PC', aceite_privacidade: true },
   });
   const tokenB = userBReg.body.token;
 
@@ -805,4 +900,186 @@ test('authLimiter limits /auth/login and /auth/register to 20 requests per 15 mi
     body: { email: 'rate@anac.br', senha: 'WrongPassword', carreira: 'PP' },
   });
   assert.equal(limited.status, 429);
+});
+
+test('LGPD Art. 18 rights: profile rectification, password change, export, server-side logout, and account deletion', async (t) => {
+  const { api, pool } = await startServer(t);
+
+  const reg = await api('/auth/register', {
+    method: 'POST',
+    body: {
+      nome: 'Piloto LGPD',
+      email: 'lgpd@anac.br',
+      senha: 'SenhaInicial123',
+      carreira: 'PP',
+      aceite_privacidade: true,
+    },
+  });
+  assert.equal(reg.status, 201);
+  let token = reg.body.token;
+
+  // Record 1 simulado attempt to verify export and cascade deletion
+  await api('/simulado/corrigir', {
+    method: 'POST',
+    token,
+    body: { tipo: 'personalizado', questoes: ['MET-01'], respostas: { 'MET-01': 1 } },
+  });
+
+  // 1) PATCH /auth/me — update name only (no password required)
+  const patchName = await api('/auth/me', {
+    method: 'PATCH',
+    token,
+    body: { nome: 'Comandante LGPD' },
+  });
+  assert.equal(patchName.status, 200);
+  assert.equal(patchName.body.user.nome, 'Comandante LGPD');
+
+  // 2) PATCH /auth/me — changing email requires current password
+  const patchEmailNoPass = await api('/auth/me', {
+    method: 'PATCH',
+    token,
+    body: { email: 'novo@anac.br' },
+  });
+  assert.equal(patchEmailNoPass.status, 400);
+
+  const patchEmailOk = await api('/auth/me', {
+    method: 'PATCH',
+    token,
+    body: { email: 'novo@anac.br', senha_atual: 'SenhaInicial123' },
+  });
+  assert.equal(patchEmailOk.status, 200);
+  assert.equal(patchEmailOk.body.user.email, 'novo@anac.br');
+
+  // 3) PATCH /auth/password — revokes old token and returns fresh token
+  const oldToken = token;
+  const passChange = await api('/auth/password', {
+    method: 'PATCH',
+    token,
+    body: { senha_atual: 'SenhaInicial123', nova_senha: 'NovaSenhaForte99' },
+  });
+  assert.equal(passChange.status, 200);
+  assert.ok(passChange.body.token);
+  token = passChange.body.token;
+
+  const oldTokenRejected = await api('/auth/me', { token: oldToken });
+  assert.equal(oldTokenRejected.status, 401);
+
+  // 4) GET /auth/me/export — full data portability without senha_hash
+  const exp = await api('/auth/me/export', { token });
+  assert.equal(exp.status, 200);
+  assert.match(exp.headers.get('content-disposition') || '', /aerobanca-meus-dados\.json/);
+  assert.equal(exp.body.titular.email, 'novo@anac.br');
+  assert.equal('senha_hash' in exp.body.titular, false);
+  assert.equal(exp.body.tentativas_simulado.length, 1);
+
+  // 5) POST /auth/logout — revokes token server-side
+  const logoutRes = await api('/auth/logout', { method: 'POST', token });
+  assert.equal(logoutRes.status, 200);
+  const afterLogout = await api('/auth/me', { token });
+  assert.equal(afterLogout.status, 401);
+
+  // Re-login with new password
+  const relogin = await api('/auth/login', {
+    method: 'POST',
+    body: { email: 'novo@anac.br', senha: 'NovaSenhaForte99', carreira: 'PP' },
+  });
+  assert.equal(relogin.status, 200);
+  token = relogin.body.token;
+
+  // 6) DELETE /auth/me — requires password and cascades tentativas_simulado
+  const delWrongPass = await api('/auth/me', {
+    method: 'DELETE',
+    token,
+    body: { senha: 'Errada' },
+  });
+  assert.equal(delWrongPass.status, 401);
+
+  const delOk = await api('/auth/me', {
+    method: 'DELETE',
+    token,
+    body: { senha: 'NovaSenhaForte99' },
+  });
+  assert.equal(delOk.status, 200);
+  assert.equal(pool.state.usuarios.length, 0);
+  assert.equal(pool.state.tentativas.length, 0);
+  assert.equal(pool.state.auditLogs.some((l) => l.acao === 'conta_excluida'), true);
+
+  const afterDel = await api('/auth/me', { token });
+  assert.equal(afterDel.status, 401);
+});
+
+test('POST /simulado/corrigir returns ordered gabaritoErros with user choices, blank nulls, and commentary', async (t) => {
+  const { api } = await startServer(t);
+  const reg = await api('/auth/register', {
+    method: 'POST',
+    body: { nome: 'Gabarito Tester', email: 'gabarito@anac.br', senha: 'Senha123', carreira: 'PP', aceite_privacidade: true },
+  });
+  assert.equal(reg.status, 201);
+  const token = reg.body.token;
+
+  // Order sent: ['NAV-01', 'MET-01', 'MET-04', 'RPA-01']
+  // NAV-01 (correct=1): answered 0 (wrong)
+  // MET-01 (correct=1): answered 1 (right -> must NOT appear in gabaritoErros)
+  // MET-04 (correct=0): answered null (blank -> must count wrong & appear with chosen: null)
+  // RPA-01 (correct=1): omitted (blank -> must appear with chosen: null)
+  const resWithErrors = await api('/simulado/corrigir', {
+    method: 'POST',
+    token,
+    body: {
+      tipo: 'personalizado',
+      questoes: ['NAV-01', 'MET-01', 'MET-04', 'RPA-01'],
+      respostas: {
+        'NAV-01': 0,
+        'MET-01': 1,
+        'MET-04': null,
+      },
+    },
+  });
+
+  assert.equal(resWithErrors.status, 200);
+  assert.equal(resWithErrors.body.total_questoes, 4);
+  assert.equal(resWithErrors.body.total_acertos, 1);
+  assert.equal(Array.isArray(resWithErrors.body.gabaritoErros), true);
+  assert.equal(resWithErrors.body.gabaritoErros.length, 3);
+
+  assert.deepEqual(
+    resWithErrors.body.gabaritoErros.map((e) => ({ numero: e.numero, id: e.id, chosen: e.chosen, correct: e.correct })),
+    [
+      { numero: 1, id: 'NAV-01', chosen: 0, correct: 1 },
+      { numero: 3, id: 'MET-04', chosen: null, correct: 0 },
+      { numero: 4, id: 'RPA-01', chosen: null, correct: 1 },
+    ]
+  );
+
+  for (const errItem of resWithErrors.body.gabaritoErros) {
+    assert.ok(['MET', 'NAV', 'RPA', 'CT', 'TSV'].includes(errItem.subject));
+    assert.equal(typeof errItem.topic, 'string');
+    assert.equal(typeof errItem.stem, 'string');
+    assert.ok(errItem.stem.length > 0);
+    assert.equal(Array.isArray(errItem.options), true);
+    assert.equal(errItem.options.length, 4);
+    assert.equal(typeof errItem.explanation, 'string');
+    assert.ok(errItem.explanation.length > 0);
+    assert.notEqual(errItem.id, 'MET-01');
+  }
+
+  // 100% score returns empty gabaritoErros
+  const resPerfect = await api('/simulado/corrigir', {
+    method: 'POST',
+    token,
+    body: {
+      tipo: 'personalizado',
+      questoes: ['MET-01', 'MET-04', 'NAV-01'],
+      respostas: {
+        'MET-01': 1,
+        'MET-04': 0,
+        'NAV-01': 1,
+      },
+    },
+  });
+
+  assert.equal(resPerfect.status, 200);
+  assert.equal(resPerfect.body.total_acertos, 3);
+  assert.equal(resPerfect.body.percentual, 100);
+  assert.deepEqual(resPerfect.body.gabaritoErros, []);
 });

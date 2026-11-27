@@ -589,6 +589,9 @@ let practiceAnswers = {}; // { [codigo]: { chosenIdx, correctIdx, comentario, co
 
 let activeExam = null;
 let examResultVisible = false;
+let lastExamResult = null;
+let lastExamSnapshot = null;
+let activeErrorReviewFilter = 'ALL';
 let timerInterval = null;
 let currentView = 'dashboard';
 
@@ -708,6 +711,9 @@ function resetSessionState() {
   practiceAnswers = {};
   activeExam = null;
   examResultVisible = false;
+  lastExamResult = null;
+  lastExamSnapshot = null;
+  activeErrorReviewFilter = 'ALL';
   stopExamTimer();
   hideWelcomeSplash(true);
   resetAuthCareerSelection();
@@ -815,6 +821,7 @@ async function bootstrapApp() {
   applySavedSidebarState();
   setupAuthListeners();
   setupNavigationListeners();
+  setupPrivacyAndAccountListeners();
   setupDashboardListeners();
   setupMetricsListeners();
   setupSimuladoListeners();
@@ -864,6 +871,8 @@ function setAuthMode(mode) {
   const nameGroup = document.getElementById('authNameGroup');
   const nameInput = document.getElementById('authNameInput');
   const passInput = document.getElementById('authPasswordInput');
+  const privacyGroup = document.getElementById('authPrivacyGroup');
+  const privacyCheck = document.getElementById('authPrivacyCheck');
   const submitBtn = document.getElementById('authSubmitBtn');
 
   const isReg = authMode === 'register';
@@ -877,6 +886,8 @@ function setAuthMode(mode) {
   }
   if (nameGroup) nameGroup.classList.toggle('hidden', !isReg);
   if (nameInput) nameInput.required = isReg;
+  if (privacyGroup) privacyGroup.classList.toggle('hidden', !isReg);
+  if (privacyCheck) privacyCheck.required = isReg;
   if (passInput) passInput.autocomplete = isReg ? 'new-password' : 'current-password';
   if (submitBtn) submitBtn.textContent = isReg ? 'Criar Conta' : 'Entrar';
   setAuthFeedback('');
@@ -932,6 +943,7 @@ async function handleAuthSubmit(event) {
   const nameInput = document.getElementById('authNameInput');
   const emailInput = document.getElementById('authEmailInput');
   const passInput = document.getElementById('authPasswordInput');
+  const privacyCheck = document.getElementById('authPrivacyCheck');
   const submitBtn = document.getElementById('authSubmitBtn');
 
   const nome = nameInput ? nameInput.value.trim() : '';
@@ -946,12 +958,21 @@ async function handleAuthSubmit(event) {
     setAuthFeedback('Informe um e-mail válido.', 'error');
     return;
   }
-  if (typeof senha !== 'string' || senha.length < 6 || senha.length > 128) {
-    setAuthFeedback('A senha deve ter entre 6 e 128 caracteres.', 'error');
+  if (authMode === 'register') {
+    if (typeof senha !== 'string' || senha.length < 8 || senha.length > 128) {
+      setAuthFeedback('A senha deve ter entre 8 e 128 caracteres.', 'error');
+      return;
+    }
+  } else if (typeof senha !== 'string' || senha.length === 0 || senha.length > 128) {
+    setAuthFeedback('Informe sua senha.', 'error');
     return;
   }
   if (!VALID_CAREERS.includes(selectedAuthCareer)) {
     setAuthFeedback('Selecione sua carreira de foco (PP, PC ou CMS) antes de continuar.', 'error');
+    return;
+  }
+  if (authMode === 'register' && (!privacyCheck || !privacyCheck.checked)) {
+    setAuthFeedback('É necessário aceitar a Política de Privacidade e os Termos de Uso.', 'error');
     return;
   }
 
@@ -959,7 +980,7 @@ async function handleAuthSubmit(event) {
   const endpoint = submittedMode === 'register' ? '/auth/register' : '/auth/login';
   const payload =
     submittedMode === 'register'
-      ? { nome, email, senha, carreira: selectedAuthCareer }
+      ? { nome, email, senha, carreira: selectedAuthCareer, aceite_privacidade: true }
       : { email, senha, carreira: selectedAuthCareer };
 
   if (submitBtn) {
@@ -1046,14 +1067,276 @@ function syncUserChrome() {
   if (badgeEl) badgeEl.textContent = currentUser.carreira || 'PP';
 }
 
-function logoutUser() {
+async function logoutUser() {
+  if (getUserToken() && isApiEnabled()) {
+    try {
+      await apiFetch('/auth/logout', { method: 'POST', handleUnauthorized: false });
+    } catch {
+      // Prossegue com limpeza local mesmo se a API estiver indisponível
+    }
+  }
   clearUserToken();
+  closeAccountModal();
+  closePrivacyModal();
   resetSessionState();
   const authForm = document.getElementById('authForm');
   if (authForm && typeof authForm.reset === 'function') {
     authForm.reset();
   }
   showAuthScreen('');
+}
+
+// ============================================================================
+// LGPD: POLÍTICA DE PRIVACIDADE E DIREITOS DO TITULAR (ART. 18)
+// ============================================================================
+
+function openPrivacyModal() {
+  const modal = document.getElementById('privacyPolicyModal');
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closePrivacyModal() {
+  const modal = document.getElementById('privacyPolicyModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function openAccountModal() {
+  if (!currentUser) return;
+  const modal = document.getElementById('accountPrivacyModal');
+  const nameInput = document.getElementById('accountNameInput');
+  const emailInput = document.getElementById('accountEmailInput');
+  const emailPassInput = document.getElementById('accountEmailPasswordInput');
+  const curPassInput = document.getElementById('accountCurrentPasswordInput');
+  const newPassInput = document.getElementById('accountNewPasswordInput');
+  const delPassInput = document.getElementById('deleteAccountPasswordInput');
+
+  if (nameInput) nameInput.value = currentUser.nome || '';
+  if (emailInput) emailInput.value = currentUser.email || '';
+  if (emailPassInput) emailPassInput.value = '';
+  if (curPassInput) curPassInput.value = '';
+  if (newPassInput) newPassInput.value = '';
+  if (delPassInput) delPassInput.value = '';
+
+  setFeedback(document.getElementById('accountProfileFeedback'), '');
+  setFeedback(document.getElementById('accountPasswordFeedback'), '');
+  setFeedback(document.getElementById('accountExportFeedback'), '');
+  setFeedback(document.getElementById('deleteAccountFeedback'), '');
+
+  if (modal) modal.classList.remove('hidden');
+  closeMobileSidebar();
+}
+
+function closeAccountModal() {
+  const modal = document.getElementById('accountPrivacyModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function handleProfileUpdate(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+
+  const nameInput = document.getElementById('accountNameInput');
+  const emailInput = document.getElementById('accountEmailInput');
+  const passInput = document.getElementById('accountEmailPasswordInput');
+  const feedbackEl = document.getElementById('accountProfileFeedback');
+  const submitBtn = document.getElementById('saveProfileBtn');
+
+  const nome = nameInput ? nameInput.value.trim() : '';
+  const email = emailInput ? emailInput.value.trim().toLowerCase() : '';
+  const senhaAtual = passInput ? passInput.value : '';
+
+  if (!nome || nome.length > 120) {
+    setFeedback(feedbackEl, 'Nome obrigatório (máx. 120 caracteres).', 'error');
+    return;
+  }
+  if (!isValidEmailFormat(email)) {
+    setFeedback(feedbackEl, 'Informe um e-mail válido.', 'error');
+    return;
+  }
+  const emailChanged = email !== currentUser.email;
+  if (emailChanged && !senhaAtual) {
+    setFeedback(feedbackEl, 'Informe sua senha atual para alterar o e-mail.', 'error');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  setFeedback(feedbackEl, '');
+  try {
+    const body = { nome, email };
+    if (emailChanged) body.senha_atual = senhaAtual;
+    const res = await apiFetch('/auth/me', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+      handleUnauthorized: false
+    });
+    if (res && res.user) {
+      currentUser = res.user;
+      syncUserChrome();
+      if (passInput) passInput.value = '';
+      setFeedback(feedbackEl, 'Dados cadastrais atualizados com sucesso.', 'success');
+    }
+  } catch (err) {
+    setFeedback(feedbackEl, (err && err.message) || 'Erro ao atualizar dados.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function handlePasswordUpdate(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+
+  const curInput = document.getElementById('accountCurrentPasswordInput');
+  const newInput = document.getElementById('accountNewPasswordInput');
+  const feedbackEl = document.getElementById('accountPasswordFeedback');
+  const submitBtn = document.getElementById('savePasswordBtn');
+
+  const senhaAtual = curInput ? curInput.value : '';
+  const novaSenha = newInput ? newInput.value : '';
+
+  if (!senhaAtual) {
+    setFeedback(feedbackEl, 'Informe sua senha atual.', 'error');
+    return;
+  }
+  if (novaSenha.length < 8 || novaSenha.length > 128) {
+    setFeedback(feedbackEl, 'A nova senha deve ter entre 8 e 128 caracteres.', 'error');
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  setFeedback(feedbackEl, '');
+  try {
+    const res = await apiFetch('/auth/password', {
+      method: 'PATCH',
+      body: JSON.stringify({ senha_atual: senhaAtual, nova_senha: novaSenha }),
+      handleUnauthorized: false
+    });
+    if (res && res.token) {
+      setUserToken(res.token);
+    }
+    if (curInput) curInput.value = '';
+    if (newInput) newInput.value = '';
+    setFeedback(feedbackEl, 'Senha atualizada e sessões anteriores revogadas.', 'success');
+  } catch (err) {
+    setFeedback(feedbackEl, (err && err.message) || 'Erro ao alterar senha.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+async function handleExportMyData() {
+  if (!currentUser) return;
+  const feedbackEl = document.getElementById('accountExportFeedback');
+  const btn = document.getElementById('exportMyDataBtn');
+
+  if (btn) btn.disabled = true;
+  setFeedback(feedbackEl, '');
+  try {
+    const data = await apiFetch('/auth/me/export');
+    const jsonText = JSON.stringify(data, null, 2);
+    if (typeof Blob !== 'undefined' && typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
+      const blob = new Blob([jsonText], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'aerobanca-meus-dados.json';
+      if (document.body && typeof document.body.appendChild === 'function') {
+        document.body.appendChild(a);
+        if (typeof a.click === 'function') a.click();
+        a.remove();
+      }
+      if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(url);
+    }
+    setFeedback(feedbackEl, 'Exportação concluída com sucesso.', 'success');
+  } catch (err) {
+    setFeedback(feedbackEl, (err && err.message) || 'Erro ao exportar dados.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function handleDeleteAccount(event) {
+  event.preventDefault();
+  if (!currentUser) return;
+
+  const passInput = document.getElementById('deleteAccountPasswordInput');
+  const feedbackEl = document.getElementById('deleteAccountFeedback');
+  const submitBtn = document.getElementById('deleteAccountBtn');
+  const senha = passInput ? passInput.value : '';
+
+  if (!senha) {
+    setFeedback(feedbackEl, 'Confirme sua senha para excluir a conta.', 'error');
+    return;
+  }
+  if (typeof confirm === 'function' && !confirm('Tem certeza? Sua conta e todo o histórico de simulados serão excluídos permanentemente.')) {
+    return;
+  }
+
+  if (submitBtn) submitBtn.disabled = true;
+  setFeedback(feedbackEl, '');
+  try {
+    await apiFetch('/auth/me', {
+      method: 'DELETE',
+      body: JSON.stringify({ senha }),
+      handleUnauthorized: false
+    });
+    clearUserToken();
+    try {
+      localStorage.removeItem(LOCAL_QUESTIONS_KEY);
+    } catch {
+      // Ignora erro de localStorage
+    }
+    closeAccountModal();
+    closePrivacyModal();
+    resetSessionState();
+    const authForm = document.getElementById('authForm');
+    if (authForm && typeof authForm.reset === 'function') authForm.reset();
+    showAuthScreen('Sua conta e seus dados pessoais foram eliminados com sucesso.', 'success');
+  } catch (err) {
+    setFeedback(feedbackEl, (err && err.message) || 'Erro ao excluir conta.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function setupPrivacyAndAccountListeners() {
+  const openPrivacyFromAuth = document.getElementById('openPrivacyFromAuthBtn');
+  const openPrivacyFromFooter = document.getElementById('authFooterPrivacyBtn');
+  const openPrivacyFromAccount = document.getElementById('openPrivacyFromAccountBtn');
+  const closePrivacyBtn = document.getElementById('closePrivacyModalBtn');
+  const privacyModal = document.getElementById('privacyPolicyModal');
+
+  const openAccountBtn = document.getElementById('openAccountPrivacyBtn');
+  const closeAccountBtn = document.getElementById('closeAccountModalBtn');
+  const accountModal = document.getElementById('accountPrivacyModal');
+
+  const profileForm = document.getElementById('accountProfileForm');
+  const passwordForm = document.getElementById('accountPasswordForm');
+  const exportBtn = document.getElementById('exportMyDataBtn');
+  const deleteForm = document.getElementById('deleteAccountForm');
+
+  if (openPrivacyFromAuth) openPrivacyFromAuth.addEventListener('click', openPrivacyModal);
+  if (openPrivacyFromFooter) openPrivacyFromFooter.addEventListener('click', openPrivacyModal);
+  if (openPrivacyFromAccount) openPrivacyFromAccount.addEventListener('click', openPrivacyModal);
+  if (closePrivacyBtn) closePrivacyBtn.addEventListener('click', closePrivacyModal);
+  if (privacyModal) {
+    privacyModal.addEventListener('click', (e) => {
+      if (e.target === privacyModal) closePrivacyModal();
+    });
+  }
+
+  if (openAccountBtn) openAccountBtn.addEventListener('click', openAccountModal);
+  if (closeAccountBtn) closeAccountBtn.addEventListener('click', closeAccountModal);
+  if (accountModal) {
+    accountModal.addEventListener('click', (e) => {
+      if (e.target === accountModal) closeAccountModal();
+    });
+  }
+
+  if (profileForm) profileForm.addEventListener('submit', handleProfileUpdate);
+  if (passwordForm) passwordForm.addEventListener('submit', handlePasswordUpdate);
+  if (exportBtn) exportBtn.addEventListener('click', handleExportMyData);
+  if (deleteForm) deleteForm.addEventListener('submit', handleDeleteAccount);
 }
 
 // ============================================================================
@@ -1949,6 +2232,15 @@ function setupSimuladoListeners() {
 
   if (resultScreen) {
     resultScreen.addEventListener('click', (event) => {
+      const filterBtn = event.target && typeof event.target.closest === 'function'
+        ? event.target.closest('[data-error-filter]')
+        : null;
+      if (filterBtn) {
+        const subjectFilter = filterBtn.getAttribute('data-error-filter') || 'ALL';
+        applyExamErrorFilter(subjectFilter);
+        return;
+      }
+
       const practiceBtn = event.target && typeof event.target.closest === 'function'
         ? event.target.closest('[data-practice-subject]')
         : null;
@@ -1984,6 +2276,9 @@ function resetSimuladoToConfig() {
   stopExamTimer();
   activeExam = null;
   examResultVisible = false;
+  lastExamResult = null;
+  lastExamSnapshot = null;
+  activeErrorReviewFilter = 'ALL';
   setSimuladoConfigFeedback('');
   setExamFeedback('');
 
@@ -2296,6 +2591,11 @@ async function submitActiveExam() {
     }
   });
 
+  const examSnapshot = {
+    questions: questions.map((q) => ({ ...q })),
+    answers: { ...activeExam.answers }
+  };
+
   const finishBtn = document.getElementById('finishExamBtn');
   const examTipo = activeExam.tipo;
   activeExam.submitting = true;
@@ -2322,9 +2622,12 @@ async function submitActiveExam() {
       document.body.classList.remove('leveling-locked');
     }
 
+    lastExamResult = result;
+    lastExamSnapshot = examSnapshot;
+    activeErrorReviewFilter = 'ALL';
     activeExam = null;
     examResultVisible = true;
-    renderExamResultScreen(result);
+    renderExamResultScreen(result, examSnapshot);
 
     // Atualiza título da topbar caso o nivelamento tenha acabado de desbloquear
     const titleEl = document.getElementById('pageTitle');
@@ -2347,12 +2650,264 @@ async function submitActiveExam() {
   }
 }
 
-function renderExamResultScreen(result) {
+function buildExamErrorItems(result, examSnapshot = null) {
+  const snapshotQuestions = examSnapshot && Array.isArray(examSnapshot.questions) ? examSnapshot.questions : [];
+  const snapshotAnswers = examSnapshot && examSnapshot.answers ? examSnapshot.answers : {};
+  const questionById = new Map();
+  const chosenById = new Map();
+
+  snapshotQuestions.forEach((q, idx) => {
+    if (!q || !q.id) return;
+    questionById.set(q.id, { q, idx });
+    const ans = snapshotAnswers[idx];
+    chosenById.set(q.id, Number.isInteger(ans) && ans >= 0 && ans <= 3 ? ans : null);
+  });
+
+  const normalizeItem = (raw, fallbackSubject = '') => {
+    const id = String((raw && raw.id) || '');
+    const snapEntry = questionById.get(id) || null;
+    const snapQ = snapEntry ? snapEntry.q : null;
+    const rawChosen = raw ? raw.chosen : undefined;
+    const chosen = Number.isInteger(rawChosen) && rawChosen >= 0 && rawChosen <= 3
+      ? rawChosen
+      : (rawChosen === null ? null : (chosenById.has(id) ? chosenById.get(id) : null));
+    const rawCorrect = raw ? raw.correct : undefined;
+    const correct = Number.isInteger(rawCorrect) && rawCorrect >= 0 && rawCorrect <= 3 ? rawCorrect : null;
+    const rawOptions = raw && Array.isArray(raw.options) && raw.options.length > 0
+      ? raw.options
+      : (snapQ && Array.isArray(snapQ.options) ? snapQ.options : []);
+
+    return {
+      numero: raw && Number.isInteger(raw.numero) ? raw.numero : (snapEntry ? snapEntry.idx + 1 : null),
+      id,
+      subject: String((raw && raw.subject) || fallbackSubject || (snapQ && snapQ.subject) || ''),
+      topic: String((raw && raw.topic) || (snapQ && snapQ.topic) || ''),
+      difficulty: String((raw && raw.difficulty) || (snapQ && snapQ.difficulty) || 'Banca ANAC'),
+      stem: String((raw && raw.stem) || (snapQ && snapQ.stem) || ''),
+      options: rawOptions.map((opt) => String(opt)),
+      chosen,
+      correct,
+      explanation: String((raw && raw.explanation) || '')
+    };
+  };
+
+  if (result && Array.isArray(result.gabaritoErros)) {
+    return result.gabaritoErros.map((item) => normalizeItem(item));
+  }
+
+  const porMateria = result && result.porMateria ? result.porMateria : {};
+  const fallbackItems = [];
+  ANAC_SUBJECTS.forEach((sub) => {
+    const errList = porMateria[sub.code] && Array.isArray(porMateria[sub.code].erradas)
+      ? porMateria[sub.code].erradas
+      : [];
+    errList.forEach((errItem) => {
+      fallbackItems.push(normalizeItem(errItem, sub.code));
+    });
+  });
+
+  fallbackItems.sort((a, b) => {
+    const na = a.numero ?? Number.MAX_SAFE_INTEGER;
+    const nb = b.numero ?? Number.MAX_SAFE_INTEGER;
+    return na - nb;
+  });
+  return fallbackItems;
+}
+
+function renderExamErrorReviewSection(errorItems, filterSubject = 'ALL') {
+  if (!Array.isArray(errorItems) || errorItems.length === 0) {
+    return `
+      <section class="error-review-section" id="examErrorReviewSection">
+        <div class="error-review-empty">
+          <span class="subject-status-pill pass">✓ Gabarito perfeito</span>
+          <h4>Nenhum erro neste simulado!</h4>
+          <p>Você acertou todas as questões avaliadas. Excelente desempenho.</p>
+        </div>
+      </section>
+    `;
+  }
+
+  const countsBySubject = new Map();
+  errorItems.forEach((item) => {
+    const code = item.subject || 'OUTROS';
+    countsBySubject.set(code, (countsBySubject.get(code) || 0) + 1);
+  });
+
+  const subjectCounts = ANAC_SUBJECTS
+    .filter((sub) => countsBySubject.has(sub.code))
+    .map((sub) => ({ code: sub.code, count: countsBySubject.get(sub.code) }));
+
+  countsBySubject.forEach((count, code) => {
+    if (!ANAC_SUBJECTS.some((sub) => sub.code === code)) {
+      subjectCounts.push({ code, count });
+    }
+  });
+
+  const activeFilter = filterSubject && (filterSubject === 'ALL' || countsBySubject.has(filterSubject))
+    ? filterSubject
+    : 'ALL';
+
+  const filtersHtml = subjectCounts.length >= 2
+    ? `
+      <div class="error-review-filters" role="group" aria-label="Filtrar erros por matéria">
+        <button
+          type="button"
+          class="error-filter-pill ${activeFilter === 'ALL' ? 'active' : ''}"
+          data-error-filter="ALL"
+          aria-pressed="${activeFilter === 'ALL' ? 'true' : 'false'}"
+        >Todos (${errorItems.length})</button>
+        ${subjectCounts.map(({ code, count }) => `
+          <button
+            type="button"
+            class="error-filter-pill ${activeFilter === code ? 'active' : ''}"
+            data-error-filter="${esc(code)}"
+            aria-pressed="${activeFilter === code ? 'true' : 'false'}"
+          >${esc(code)} (${count})</button>
+        `).join('')}
+      </div>
+    `
+    : '';
+
+  const cardsHtml = errorItems.map((item) => {
+    const isHidden = activeFilter !== 'ALL' && item.subject !== activeFilter;
+    const numTag = item.numero !== null ? `<span class="error-q-num">Q${String(item.numero).padStart(2, '0')}</span>` : '';
+    const topicLabel = item.subject ? `${item.subject} • ${item.topic}` : item.topic;
+
+    let statusPillHtml = '';
+    if (item.chosen === null) {
+      statusPillHtml = '<span class="error-status-pill blank">Em branco</span>';
+    } else if (item.correct !== null) {
+      statusPillHtml = `<span class="error-status-pill wrong">Marcou ${LETTERS[item.chosen]} • Correta ${LETTERS[item.correct]}</span>`;
+    } else {
+      statusPillHtml = `<span class="error-status-pill wrong">Marcou ${LETTERS[item.chosen]}</span>`;
+    }
+
+    const stemHtml = item.stem
+      ? `<p class="question-stem error-review-stem">${esc(item.stem)}</p>`
+      : '';
+
+    const optionsHtml = item.options.length > 0
+      ? `
+        <div class="error-review-options">
+          ${item.options.map((optText, optIdx) => {
+            const isCorrect = item.correct === optIdx;
+            const isWrong = item.chosen === optIdx && !isCorrect;
+            const classes = ['error-review-opt'];
+            if (isCorrect) classes.push('is-correct');
+            if (isWrong) classes.push('is-wrong');
+            let badgeHtml = '';
+            if (isCorrect) badgeHtml = '<span class="error-opt-badge badge-correct">✓ Gabarito</span>';
+            else if (isWrong) badgeHtml = '<span class="error-opt-badge badge-wrong">✕ Sua resposta</span>';
+
+            return `
+              <div class="${classes.join(' ')}">
+                <span><strong>${LETTERS[optIdx]})</strong> ${esc(optText)}</span>
+                ${badgeHtml}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `
+      : '';
+
+    const blankNoteHtml = item.chosen === null
+      ? '<p class="error-blank-note">Questão deixada em branco durante o simulado.</p>'
+      : '';
+
+    const gabaritoSuffix = item.correct !== null ? ` (${LETTERS[item.correct]})` : '';
+    const explanationHtml = `
+      <div class="bank-explanation">
+        <strong>Gabarito Comentado${gabaritoSuffix}:</strong> ${esc(item.explanation || 'Sem comentário cadastrado.')}
+      </div>
+    `;
+
+    return `
+      <article
+        class="error-review-card ${isHidden ? 'hidden' : ''}"
+        data-error-card="true"
+        data-error-subject="${esc(item.subject)}"
+      >
+        <div class="question-header-meta">
+          ${numTag}
+          <span class="q-id-tag">#${esc(item.id)}</span>
+          <span class="q-topic-tag">${esc(topicLabel)}</span>
+          ${statusPillHtml}
+        </div>
+        ${stemHtml}
+        ${optionsHtml}
+        ${blankNoteHtml}
+        ${explanationHtml}
+      </article>
+    `;
+  }).join('');
+
+  return `
+    <section class="error-review-section" id="examErrorReviewSection">
+      <div class="error-review-header">
+        <div>
+          <div class="error-review-title-row">
+            <h4>Gabarito dos Seus Erros</h4>
+            <span class="error-count-badge">${errorItems.length} ${errorItems.length === 1 ? 'erro' : 'erros'}</span>
+          </div>
+          <p class="section-desc">Compare o que você marcou com o gabarito oficial e leia a justificativa técnica.</p>
+        </div>
+        ${filtersHtml}
+      </div>
+      <div class="error-review-list">
+        ${cardsHtml}
+      </div>
+    </section>
+  `;
+}
+
+function applyExamErrorFilter(subjectFilter = 'ALL') {
+  activeErrorReviewFilter = subjectFilter || 'ALL';
+  const resultScreen = document.getElementById('examResultScreen');
+  if (!resultScreen) return;
+
+  const cards = typeof resultScreen.querySelectorAll === 'function'
+    ? Array.from(resultScreen.querySelectorAll('[data-error-card]'))
+    : [];
+
+  if (cards.length > 0) {
+    cards.forEach((card) => {
+      const cardSubject = card.getAttribute('data-error-subject') || '';
+      const shouldHide = activeErrorReviewFilter !== 'ALL' && cardSubject !== activeErrorReviewFilter;
+      card.classList.toggle('hidden', shouldHide);
+    });
+
+    const filterButtons = Array.from(resultScreen.querySelectorAll('[data-error-filter]'));
+    filterButtons.forEach((btn) => {
+      const isMatch = (btn.getAttribute('data-error-filter') || 'ALL') === activeErrorReviewFilter;
+      btn.classList.toggle('active', isMatch);
+      btn.setAttribute('aria-pressed', String(isMatch));
+    });
+    return;
+  }
+
+  if (lastExamResult) {
+    renderExamResultScreen(lastExamResult, lastExamSnapshot);
+  }
+}
+
+function renderExamResultScreen(result, examSnapshot = lastExamSnapshot) {
   const activeContainer = document.getElementById('examActiveContainer');
   const resultScreen = document.getElementById('examResultScreen');
   if (activeContainer) activeContainer.classList.add('hidden');
   if (!resultScreen) return;
   resultScreen.classList.remove('hidden');
+
+  if (result !== lastExamResult) {
+    activeErrorReviewFilter = 'ALL';
+  }
+  lastExamResult = result || null;
+  lastExamSnapshot = examSnapshot || null;
+
+  const errorItems = buildExamErrorItems(result, examSnapshot);
+  const errorReviewHtml = renderExamErrorReviewSection(errorItems, activeErrorReviewFilter);
+  const errorBannerNote = errorItems.length > 0
+    ? ` Confira abaixo o gabarito comentado de ${errorItems.length === 1 ? '1 erro' : `${errorItems.length} erros`}.`
+    : ' Você acertou todas as questões deste simulado.';
 
   const porMateria = result && result.porMateria ? result.porMateria : {};
   const entries = ANAC_SUBJECTS
@@ -2421,7 +2976,7 @@ function renderExamResultScreen(result) {
         <span class="result-badge">${isLeveling ? 'NIVELAMENTO CONCLUÍDO' : 'SIMULADO CONCLUÍDO'} • ${esc(result.carreira || '')}</span>
         <h2 style="font-size: 1.45rem; margin-bottom: 6px;">Resultado Oficial ANAC</h2>
         <p style="color: #dbeafe; max-width: 560px;">
-          Meta mínima da banca: <strong>${PASSING_THRESHOLD}% por matéria</strong>. Suas métricas já foram salvas no histórico.
+          Meta mínima da banca: <strong>${PASSING_THRESHOLD}% por matéria</strong>. Suas métricas já foram salvas no histórico.${errorBannerNote}
         </p>
       </div>
       <div class="result-score-circle">
@@ -2443,6 +2998,8 @@ function renderExamResultScreen(result) {
         ${focusHtml}
       </div>
     </div>
+
+    ${errorReviewHtml}
 
     <div class="form-actions" style="margin-top: 20px;">
       <button type="button" class="btn btn-primary" data-result-action="dashboard">Ir para Painel &amp; Matérias</button>
@@ -2599,3 +3156,4 @@ window.startLevelingExam = startLevelingExam;
 window.submitActiveExam = submitActiveExam;
 window.selectExamOption = selectExamOption;
 window.jumpToExamQuestion = jumpToExamQuestion;
+window.applyExamErrorFilter = applyExamErrorFilter;

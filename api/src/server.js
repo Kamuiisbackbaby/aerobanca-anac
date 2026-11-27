@@ -5,6 +5,8 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const { pool: defaultPool, init } = require("./db");
 const {
+  PRIVACY_VERSION,
+  MIN_PASSWORD_LENGTH,
   normalizeEmail,
   isValidEmail,
   isValidCareer,
@@ -36,14 +38,29 @@ const publica = (r) => ({
   options: r.alternativas,
 });
 
-// Nunca expõe senha_hash ao cliente
+// Nunca expõe senha_hash nem token_version ao cliente
 const sanitizeUser = (row) => ({
   id: row.id,
   nome: row.nome,
   email: row.email,
   carreira: row.carreira,
   nivelamento_concluido: Boolean(row.nivelamento_concluido),
+  privacidade_versao: row.privacidade_versao || null,
+  privacidade_aceita_em: row.privacidade_aceita_em || null,
 });
+
+// Registro estruturado de auditoria LGPD (sem armazenar dados pessoais em texto claro)
+async function recordAudit(db, { usuarioId = null, ator = "usuario", acao, detalhes = null }) {
+  try {
+    await db.query(
+      `INSERT INTO audit_logs (usuario_id, ator, acao, detalhes)
+       VALUES ($1, $2, $3, $4)`,
+      [usuarioId, ator, acao, detalhes ? JSON.stringify(detalhes) : null]
+    );
+  } catch (e) {
+    console.warn("Falha ao gravar audit_log:", e && e.code ? e.code : "erro");
+  }
+}
 
 const validarQuestao = (b) =>
   b &&
@@ -87,22 +104,47 @@ function isValidOptionIndex(value) {
   return Number.isInteger(value) && value >= 0 && value <= 3;
 }
 
-function scoreExam(rows, respostas) {
+function scoreExam(rows, respostas, orderedCodes = []) {
+  const orderIndex = new Map(orderedCodes.map((code, idx) => [code, idx]));
+  const orderedRows =
+    orderedCodes.length > 0
+      ? [...rows].sort(
+          (a, b) =>
+            (orderIndex.get(a.codigo) ?? Number.MAX_SAFE_INTEGER) -
+            (orderIndex.get(b.codigo) ?? Number.MAX_SAFE_INTEGER)
+        )
+      : [...rows];
+
   const porMateria = {};
+  const gabaritoErros = [];
   let totalAcertos = 0;
 
-  for (const r of rows) {
+  orderedRows.forEach((r, idx) => {
     const m = (porMateria[r.materia_sigla] ||= { total: 0, acertos: 0, erradas: [] });
     m.total++;
 
     const ans = Object.prototype.hasOwnProperty.call(respostas, r.codigo) ? respostas[r.codigo] : undefined;
-    if (isValidOptionIndex(ans) && ans === r.indice_correta) {
+    const chosen = isValidOptionIndex(ans) ? ans : null;
+    if (chosen !== null && chosen === r.indice_correta) {
       m.acertos++;
       totalAcertos++;
     } else {
-      m.erradas.push({ id: r.codigo, topic: r.subtopico, explanation: r.comentario || "" });
+      const erroItem = {
+        numero: idx + 1,
+        id: r.codigo,
+        subject: r.materia_sigla,
+        topic: r.subtopico,
+        difficulty: r.dificuldade || "Banca ANAC",
+        stem: r.enunciado,
+        options: Array.isArray(r.alternativas) ? r.alternativas : [],
+        chosen,
+        correct: r.indice_correta,
+        explanation: r.comentario || "",
+      };
+      m.erradas.push(erroItem);
+      gabaritoErros.push(erroItem);
     }
-  }
+  });
 
   const detalhesDb = {};
   for (const [sigla, m] of Object.entries(porMateria)) {
@@ -115,9 +157,9 @@ function scoreExam(rows, respostas) {
     };
   }
 
-  const totalQuestoes = rows.length;
+  const totalQuestoes = orderedRows.length;
   const percentual = Math.round((totalAcertos / totalQuestoes) * 100);
-  return { totalQuestoes, totalAcertos, percentual, porMateria, detalhesDb };
+  return { totalQuestoes, totalAcertos, percentual, porMateria, detalhesDb, gabaritoErros };
 }
 
 function parseDetails(raw) {
@@ -349,11 +391,15 @@ function createApp(options = {}) {
         return res.status(401).json({ erro: "Token inválido ou expirado" });
       }
       const { rows } = await db.query(
-        "SELECT id, nome, email, carreira, nivelamento_concluido FROM usuarios WHERE id = $1",
+        "SELECT id, nome, email, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em FROM usuarios WHERE id = $1",
         [payload.uid]
       );
       if (rows.length === 0) {
         return res.status(401).json({ erro: "Usuário não encontrado" });
+      }
+      const currentVersion = Number.isInteger(rows[0].token_version) ? rows[0].token_version : 1;
+      if (payload.tv !== currentVersion) {
+        return res.status(401).json({ erro: "Sessão encerrada ou revogada. Entre novamente." });
       }
       req.user = sanitizeUser(rows[0]);
       next();
@@ -367,6 +413,7 @@ function createApp(options = {}) {
     res.json({
       status: "AeroBanca ANAC API Online",
       db: getDbStatus(),
+      privacidade_versao: PRIVACY_VERSION,
       rotas: [
         "/health",
         "/questoes",
@@ -375,7 +422,10 @@ function createApp(options = {}) {
         "/simulado/corrigir",
         "/auth/register",
         "/auth/login",
+        "/auth/logout",
         "/auth/me",
+        "/auth/me/export",
+        "/auth/password",
         "/auth/career",
         "/metricas",
       ],
@@ -383,10 +433,10 @@ function createApp(options = {}) {
   );
   app.get("/health", (_req, res) => res.json({ ok: true, db: getDbStatus() }));
 
-  // ---- Autenticação de Alunos ----
+  // ---- Autenticação de Alunos & Direitos LGPD ----
   app.post("/auth/register", authLimiter, async (req, res, next) => {
     try {
-      const { nome, email, senha, carreira } = req.body || {};
+      const { nome, email, senha, carreira, aceite_privacidade } = req.body || {};
       const nomeTrim = typeof nome === "string" ? nome.trim() : "";
       const emailNorm = normalizeEmail(email);
 
@@ -396,11 +446,18 @@ function createApp(options = {}) {
       if (!isValidEmail(emailNorm)) {
         return res.status(400).json({ erro: "E-mail inválido." });
       }
-      if (typeof senha !== "string" || senha.length < 6 || senha.length > 128) {
-        return res.status(400).json({ erro: "Senha deve ter entre 6 e 128 caracteres." });
+      if (typeof senha !== "string" || senha.length < MIN_PASSWORD_LENGTH || senha.length > 128) {
+        return res
+          .status(400)
+          .json({ erro: `Senha deve ter entre ${MIN_PASSWORD_LENGTH} e 128 caracteres.` });
       }
       if (!isValidCareer(carreira)) {
         return res.status(400).json({ erro: "Carreira inválida. Selecione PP, PC ou CMS." });
+      }
+      if (aceite_privacidade !== true) {
+        return res.status(400).json({
+          erro: "É necessário aceitar a Política de Privacidade e os Termos de Uso.",
+        });
       }
 
       const existing = await db.query("SELECT id FROM usuarios WHERE email = $1", [emailNorm]);
@@ -410,13 +467,20 @@ function createApp(options = {}) {
 
       const senhaHash = hashPassword(senha);
       const { rows } = await db.query(
-        `INSERT INTO usuarios (nome, email, senha_hash, carreira)
-         VALUES ($1, $2, $3, $4)
-         RETURNING id, nome, email, carreira, nivelamento_concluido`,
-        [nomeTrim, emailNorm, senhaHash, carreira]
+        `INSERT INTO usuarios (nome, email, senha_hash, carreira, privacidade_aceita_em, privacidade_versao, ultimo_acesso_em)
+         VALUES ($1, $2, $3, $4, NOW(), $5, NOW())
+         RETURNING id, nome, email, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em`,
+        [nomeTrim, emailNorm, senhaHash, carreira, PRIVACY_VERSION]
       );
       const user = sanitizeUser(rows[0]);
-      const token = signToken({ uid: user.id, email: user.email }, authSecret);
+      const tv = Number.isInteger(rows[0].token_version) ? rows[0].token_version : 1;
+      const token = signToken({ uid: user.id, tv }, authSecret);
+      await recordAudit(db, {
+        usuarioId: user.id,
+        ator: "usuario",
+        acao: "conta_criada",
+        detalhes: { privacidade_versao: PRIVACY_VERSION },
+      });
       return res.status(201).json({ token, user });
     } catch (e) {
       if (e && e.code === "23505") {
@@ -442,7 +506,7 @@ function createApp(options = {}) {
       }
 
       const { rows } = await db.query(
-        "SELECT id, nome, email, senha_hash, carreira, nivelamento_concluido FROM usuarios WHERE email = $1",
+        "SELECT id, nome, email, senha_hash, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em FROM usuarios WHERE email = $1",
         [emailNorm]
       );
       if (rows.length === 0 || !verifyPassword(senha, rows[0].senha_hash)) {
@@ -452,15 +516,31 @@ function createApp(options = {}) {
       let current = rows[0];
       if (current.carreira !== carreira) {
         const updated = await db.query(
-          "UPDATE usuarios SET carreira = $1 WHERE id = $2 RETURNING id, nome, email, carreira, nivelamento_concluido",
+          "UPDATE usuarios SET carreira = $1, ultimo_acesso_em = NOW() WHERE id = $2 RETURNING id, nome, email, carreira, nivelamento_concluido, token_version, privacidade_versao, privacidade_aceita_em",
           [carreira, current.id]
         );
         current = updated.rows[0];
+      } else {
+        await db.query("UPDATE usuarios SET ultimo_acesso_em = NOW() WHERE id = $1", [current.id]);
       }
 
       const user = sanitizeUser(current);
-      const token = signToken({ uid: user.id, email: user.email }, authSecret);
+      const tv = Number.isInteger(current.token_version) ? current.token_version : 1;
+      const token = signToken({ uid: user.id, tv }, authSecret);
       return res.json({ token, user });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // Revogação server-side de sessão (invalida tokens emitidos anteriormente)
+  app.post("/auth/logout", requireAuth, async (req, res, next) => {
+    try {
+      await db.query("UPDATE usuarios SET token_version = token_version + 1 WHERE id = $1", [
+        req.user.id,
+      ]);
+      await recordAudit(db, { usuarioId: req.user.id, ator: "usuario", acao: "logout" });
+      return res.json({ ok: true });
     } catch (e) {
       next(e);
     }
@@ -470,6 +550,172 @@ function createApp(options = {}) {
     res.json({ user: req.user });
   });
 
+  // LGPD Art. 18, III — Retificação de dados pessoais (nome e/ou e-mail)
+  app.patch("/auth/me", requireAuth, async (req, res, next) => {
+    try {
+      const { nome, email, senha_atual } = req.body || {};
+      const nextNome = nome !== undefined ? (typeof nome === "string" ? nome.trim() : "") : req.user.nome;
+      const nextEmail = email !== undefined ? normalizeEmail(email) : req.user.email;
+
+      if (!nextNome || nextNome.length > 120) {
+        return res.status(400).json({ erro: "Nome obrigatório (máx. 120 caracteres)." });
+      }
+      if (!isValidEmail(nextEmail)) {
+        return res.status(400).json({ erro: "E-mail inválido." });
+      }
+
+      const emailChanged = nextEmail !== req.user.email;
+      const nomeChanged = nextNome !== req.user.nome;
+
+      if (!emailChanged && !nomeChanged) {
+        return res.json({ user: req.user });
+      }
+
+      if (emailChanged) {
+        if (typeof senha_atual !== "string" || !senha_atual) {
+          return res.status(400).json({ erro: "Informe sua senha atual para alterar o e-mail." });
+        }
+        const authRow = await db.query("SELECT senha_hash FROM usuarios WHERE id = $1", [req.user.id]);
+        if (authRow.rows.length === 0 || !verifyPassword(senha_atual, authRow.rows[0].senha_hash)) {
+          return res.status(401).json({ erro: "Senha atual incorreta." });
+        }
+        const existing = await db.query("SELECT id FROM usuarios WHERE email = $1", [nextEmail]);
+        if (existing.rows.length > 0 && existing.rows[0].id !== req.user.id) {
+          return res.status(409).json({ erro: "E-mail já cadastrado por outra conta." });
+        }
+      }
+
+      const { rows } = await db.query(
+        `UPDATE usuarios SET nome = $1, email = $2
+         WHERE id = $3
+         RETURNING id, nome, email, carreira, nivelamento_concluido, privacidade_versao, privacidade_aceita_em`,
+        [nextNome, nextEmail, req.user.id]
+      );
+      if (rows.length === 0) {
+        return res.status(401).json({ erro: "Usuário não encontrado." });
+      }
+
+      const campos = [];
+      if (nomeChanged) campos.push("nome");
+      if (emailChanged) campos.push("email");
+      await recordAudit(db, {
+        usuarioId: req.user.id,
+        ator: "usuario",
+        acao: "dados_atualizados",
+        detalhes: { campos },
+      });
+
+      return res.json({ user: sanitizeUser(rows[0]) });
+    } catch (e) {
+      if (e && e.code === "23505") {
+        return res.status(409).json({ erro: "E-mail já cadastrado por outra conta." });
+      }
+      next(e);
+    }
+  });
+
+  // Alteração de senha com revogação de sessões anteriores
+  app.patch("/auth/password", authLimiter, requireAuth, async (req, res, next) => {
+    try {
+      const { senha_atual, nova_senha } = req.body || {};
+      if (typeof senha_atual !== "string" || !senha_atual) {
+        return res.status(400).json({ erro: "Informe sua senha atual." });
+      }
+      if (
+        typeof nova_senha !== "string" ||
+        nova_senha.length < MIN_PASSWORD_LENGTH ||
+        nova_senha.length > 128
+      ) {
+        return res
+          .status(400)
+          .json({ erro: `Nova senha deve ter entre ${MIN_PASSWORD_LENGTH} e 128 caracteres.` });
+      }
+
+      const authRow = await db.query("SELECT senha_hash FROM usuarios WHERE id = $1", [req.user.id]);
+      if (authRow.rows.length === 0 || !verifyPassword(senha_atual, authRow.rows[0].senha_hash)) {
+        return res.status(401).json({ erro: "Senha atual incorreta." });
+      }
+
+      const newHash = hashPassword(nova_senha);
+      const { rows } = await db.query(
+        "UPDATE usuarios SET senha_hash = $1, token_version = token_version + 1 WHERE id = $2 RETURNING token_version",
+        [newHash, req.user.id]
+      );
+      const nextTv = rows[0] && Number.isInteger(rows[0].token_version) ? rows[0].token_version : 2;
+      const token = signToken({ uid: req.user.id, tv: nextTv }, authSecret);
+
+      await recordAudit(db, { usuarioId: req.user.id, ator: "usuario", acao: "senha_alterada" });
+      return res.json({ ok: true, token });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // LGPD Art. 18, II e V — Acesso completo e portabilidade dos dados do titular
+  app.get("/auth/me/export", requireAuth, async (req, res, next) => {
+    try {
+      const userRes = await db.query(
+        `SELECT id, nome, email, carreira, nivelamento_concluido, privacidade_versao, privacidade_aceita_em, ultimo_acesso_em, criado_em
+         FROM usuarios WHERE id = $1`,
+        [req.user.id]
+      );
+      if (userRes.rows.length === 0) {
+        return res.status(401).json({ erro: "Usuário não encontrado." });
+      }
+      const attemptsRes = await db.query(
+        `SELECT id, tipo, carreira, total_questoes, total_acertos, percentual, detalhes_materias, criado_em
+         FROM tentativas_simulado
+         WHERE usuario_id = $1
+         ORDER BY criado_em DESC, id DESC`,
+        [req.user.id]
+      );
+
+      await recordAudit(db, {
+        usuarioId: req.user.id,
+        ator: "usuario",
+        acao: "dados_exportados",
+        detalhes: { total_tentativas: attemptsRes.rows.length },
+      });
+
+      res.setHeader("Content-Disposition", 'attachment; filename="aerobanca-meus-dados.json"');
+      return res.json({
+        exportado_em: new Date().toISOString(),
+        controlador: "AeroBanca ANAC",
+        versao_privacidade: PRIVACY_VERSION,
+        titular: userRes.rows[0],
+        tentativas_simulado: attemptsRes.rows,
+      });
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  // LGPD Art. 18, VI — Eliminação da conta e dos dados pessoais (com CASCADE em tentativas_simulado)
+  app.delete("/auth/me", authLimiter, requireAuth, async (req, res, next) => {
+    try {
+      const { senha } = req.body || {};
+      if (typeof senha !== "string" || !senha) {
+        return res.status(400).json({ erro: "Confirme sua senha para excluir a conta." });
+      }
+      const authRow = await db.query("SELECT senha_hash FROM usuarios WHERE id = $1", [req.user.id]);
+      if (authRow.rows.length === 0 || !verifyPassword(senha, authRow.rows[0].senha_hash)) {
+        return res.status(401).json({ erro: "Senha incorreta." });
+      }
+
+      const deletedId = req.user.id;
+      await db.query("DELETE FROM usuarios WHERE id = $1", [deletedId]);
+      await recordAudit(db, {
+        usuarioId: deletedId,
+        ator: "usuario",
+        acao: "conta_excluida",
+      });
+
+      return res.json({ ok: true, mensagem: "Conta e dados pessoais eliminados com sucesso." });
+    } catch (e) {
+      next(e);
+    }
+  });
+
   app.patch("/auth/career", requireAuth, async (req, res, next) => {
     try {
       const { carreira } = req.body || {};
@@ -477,7 +723,7 @@ function createApp(options = {}) {
         return res.status(400).json({ erro: "Carreira inválida. Selecione PP, PC ou CMS." });
       }
       const { rows } = await db.query(
-        "UPDATE usuarios SET carreira = $1 WHERE id = $2 RETURNING id, nome, email, carreira, nivelamento_concluido",
+        "UPDATE usuarios SET carreira = $1 WHERE id = $2 RETURNING id, nome, email, carreira, nivelamento_concluido, privacidade_versao, privacidade_aceita_em",
         [carreira, req.user.id]
       );
       if (rows.length === 0) {
@@ -598,7 +844,11 @@ function createApp(options = {}) {
         return res.status(400).json({ erro: "O simulado de nivelamento exige 30 questões válidas." });
       }
 
-      const { totalQuestoes, totalAcertos, percentual, porMateria, detalhesDb } = scoreExam(rows, respostas);
+      const { totalQuestoes, totalAcertos, percentual, porMateria, detalhesDb, gabaritoErros } = scoreExam(
+        rows,
+        respostas,
+        codigos
+      );
 
       const inserted = await db.query(
         `INSERT INTO tentativas_simulado (usuario_id, tipo, carreira, total_questoes, total_acertos, percentual, detalhes_materias)
@@ -630,6 +880,7 @@ function createApp(options = {}) {
         percentual,
         nivelamento_concluido: nivelamentoConcluido,
         porMateria,
+        gabaritoErros,
       });
     } catch (e) {
       next(e);
@@ -652,7 +903,7 @@ function createApp(options = {}) {
   });
 
   // ---- Admin ----
-  app.get("/admin/check", requireAdmin, (_req, res) => res.json({ ok: true }));
+  app.get("/admin/check", authLimiter, requireAdmin, (_req, res) => res.json({ ok: true }));
 
   app.get("/admin/questoes", requireAdmin, async (_req, res, next) => {
     try {
@@ -683,6 +934,7 @@ function createApp(options = {}) {
           String(b.explanation || "").slice(0, 2000),
         ]
       );
+      await recordAudit(db, { ator: "admin", acao: "questao_criada", detalhes: { codigo } });
       res.status(201).json({ id: codigo });
     } catch (e) {
       next(e);
@@ -692,6 +944,13 @@ function createApp(options = {}) {
   app.delete("/questoes/:codigo", requireAdmin, async (req, res, next) => {
     try {
       const r = await db.query("DELETE FROM questoes WHERE codigo=$1", [req.params.codigo]);
+      if (r.rowCount > 0) {
+        await recordAudit(db, {
+          ator: "admin",
+          acao: "questao_excluida",
+          detalhes: { codigo: req.params.codigo },
+        });
+      }
       res.json({ removidas: r.rowCount });
     } catch (e) {
       next(e);
@@ -699,12 +958,15 @@ function createApp(options = {}) {
   });
 
   app.use((_req, res) => res.status(404).json({ erro: "Rota não encontrada" }));
-  // Não vaza detalhes de erro ao cliente
+  // Não vaza detalhes de erro ao cliente nem dados pessoais nos logs
   app.use((err, _req, res, _next) => {
     if (err && err.type === "entity.parse.failed") {
       return res.status(400).json({ erro: "JSON inválido" });
     }
-    console.error(err);
+    console.error("Erro interno na API:", {
+      name: err && err.name ? err.name : "Error",
+      code: err && err.code ? err.code : undefined,
+    });
     return res.status(500).json({ erro: "Erro interno" });
   });
 

@@ -2,11 +2,19 @@ const { Pool } = require("pg");
 const seed = require("./seed-data.json");
 
 // O Railway injeta DATABASE_URL automaticamente quando você referencia o Postgres.
-// Dentro do Railway a conexão é interna (sem SSL); localmente via URL pública exige SSL.
+// Dentro do Railway a conexão é interna (sem SSL); localmente ou via URL pública exige SSL validado.
 const isInternal = (process.env.DATABASE_URL || "").includes(".railway.internal");
+const rejectUnauthorized = process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== "false";
+const sslConfig =
+  process.env.DATABASE_URL && !isInternal
+    ? {
+        rejectUnauthorized,
+        ...(process.env.DATABASE_SSL_CA ? { ca: process.env.DATABASE_SSL_CA } : {}),
+      }
+    : false;
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL && !isInternal ? { rejectUnauthorized: false } : false,
+  ssl: sslConfig,
 });
 
 const SCHEMA = `
@@ -34,8 +42,16 @@ CREATE TABLE IF NOT EXISTS usuarios (
   senha_hash            TEXT NOT NULL,
   carreira              VARCHAR(10) NOT NULL CHECK (carreira IN ('PP', 'PC', 'CMS')),
   nivelamento_concluido BOOLEAN NOT NULL DEFAULT FALSE,
+  token_version         INTEGER NOT NULL DEFAULT 1,
+  privacidade_aceita_em TIMESTAMPTZ,
+  privacidade_versao    VARCHAR(20),
+  ultimo_acesso_em      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   criado_em             TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS privacidade_aceita_em TIMESTAMPTZ;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS privacidade_versao VARCHAR(20);
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ultimo_acesso_em TIMESTAMPTZ NOT NULL DEFAULT NOW();
 CREATE TABLE IF NOT EXISTS tentativas_simulado (
   id                SERIAL PRIMARY KEY,
   usuario_id        INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
@@ -48,6 +64,15 @@ CREATE TABLE IF NOT EXISTS tentativas_simulado (
   criado_em         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_tentativas_usuario_data ON tentativas_simulado(usuario_id, criado_em DESC);
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id          SERIAL PRIMARY KEY,
+  usuario_id  INTEGER,
+  ator        VARCHAR(20) NOT NULL CHECK (ator IN ('usuario', 'admin', 'sistema')),
+  acao        VARCHAR(60) NOT NULL,
+  detalhes    JSONB,
+  criado_em   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_usuario_data ON audit_logs(usuario_id, criado_em DESC);
 `;
 
 // Cria as tabelas e, se estiverem vazias, carrega as 30 questões iniciais.
